@@ -18,7 +18,7 @@ class PokeHomePage extends StatelessWidget {
   Future<List<String>> _getPokemons() async {
     final dio = Dio();
     final response = await dio.get('https://pokeapi.co/api/v2/pokemon');
-    var model = PokemonListModel.FromMap(response.data);
+    var model = PokemonListModel.fromMap(response.data);
 
     var listPokemon = ["Cinderace", "Torchic", "Poliwag"];
     Future.delayed(Duration(seconds: 4));
