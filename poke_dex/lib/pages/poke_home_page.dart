@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:poke_dex/models/pokemon_list_model.dart';
-import 'package:poke_dex/models/pokemon_model.dart';
+import 'package:poke_dex/models/response_pokemon.dart';
+import 'package:poke_dex/models/pokemon_summary.dart';
 
 class PokeHomePage extends StatefulWidget {
   const PokeHomePage({super.key});
@@ -11,11 +11,16 @@ class PokeHomePage extends StatefulWidget {
 }
 
 class _PokeHomePageState extends State<PokeHomePage> {
-  List<PokemonModel> pokemonList = [];
-  List<PokemonModel> filteredPokemonList = [];
+  List<PokemonSummary> pokemonList = [];
+  List<PokemonSummary> filteredPokemonList = [];
   bool isLoading = true;
   int pokemonCount = 0;
   final TextEditingController _searchController = TextEditingController();
+
+  String capitalize(String text) {
+    if (text.isEmpty) return text;
+    return text[0].toUpperCase() + text.substring(1);
+  }
 
   @override
   void initState() {
@@ -28,7 +33,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
     final response =
         await dio.get('https://pokeapi.co/api/v2/pokemon?limit=1034');
 
-    var model = PokemonListModel.fromMap(response.data);
+    var model = ResponsePokemon.fromMap(response.data);
 
     setState(() {
       pokemonList = model.result;
@@ -39,7 +44,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
   }
 
   void _onPokemonCardPressed(
-      BuildContext context, String gifUrl, int pokemonNumber) {
+      BuildContext context, String gifUrl, String pokemonName) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -52,18 +57,6 @@ class _PokeHomePageState extends State<PokeHomePage> {
                 gifUrl,
                 width: 200,
                 height: 200,
-                loadingBuilder: (BuildContext context, Widget child,
-                    ImageChunkEvent? loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(
-                    child: CircularProgressIndicator(
-                      value: loadingProgress.expectedTotalBytes != null
-                          ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
-                          : null,
-                    ),
-                  );
-                },
                 errorBuilder: (BuildContext context, Object exception,
                     StackTrace? stackTrace) {
                   return const Icon(Icons.error, color: Colors.white);
@@ -71,7 +64,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
               ),
               const SizedBox(height: 16),
               Text(
-                'Pokémon #$pokemonNumber',
+                capitalize(pokemonName),
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -138,7 +131,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
                     color: Colors.black.withOpacity(0.2),
                     blurRadius: 5,
                     offset: const Offset(0, 3),
-                  ),
+                  )
                 ],
               ),
               child: TextField(
@@ -182,7 +175,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
                         color: Colors.grey[800],
                         child: InkWell(
                           onTap: () => _onPokemonCardPressed(
-                              context, pokemon.gifUrl, pokemonNumber),
+                              context, pokemon.gifUrl, pokemon.name),
                           borderRadius: BorderRadius.circular(10.0),
                           child: Padding(
                             padding: const EdgeInsets.all(16.0),
@@ -192,23 +185,6 @@ class _PokeHomePageState extends State<PokeHomePage> {
                                   pokemon.imageUrl,
                                   width: 50,
                                   height: 50,
-                                  loadingBuilder: (BuildContext context,
-                                      Widget child,
-                                      ImageChunkEvent? loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Center(
-                                      child: CircularProgressIndicator(
-                                        value: loadingProgress
-                                                    .expectedTotalBytes !=
-                                                null
-                                            ? loadingProgress
-                                                    .cumulativeBytesLoaded /
-                                                loadingProgress
-                                                    .expectedTotalBytes!
-                                            : null,
-                                      ),
-                                    );
-                                  },
                                   errorBuilder: (BuildContext context,
                                       Object exception,
                                       StackTrace? stackTrace) {
@@ -226,7 +202,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
                                 ),
                                 const SizedBox(width: 16),
                                 Text(
-                                  pokemon.name,
+                                  capitalize(pokemon.name),
                                   style: const TextStyle(
                                     fontSize: 16,
                                     color: Colors.white,
