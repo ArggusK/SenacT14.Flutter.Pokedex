@@ -2,7 +2,7 @@ import 'package:poke_dex/models/pokemon_summary.dart';
 
 class ResponsePokemon {
   final int count;
-  final String next;
+  final String? next;
   final String? previous;
   final List<PokemonSummary> result;
 
@@ -20,7 +20,7 @@ class ResponsePokemon {
 
     return ResponsePokemon(
       count: map['count'] as int,
-      next: map['next'] as String,
+      next: map['next'] as String?,
       previous: map['previous'] as String?,
       result: pokemonList,
     );

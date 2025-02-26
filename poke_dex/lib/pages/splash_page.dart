@@ -24,7 +24,7 @@ class _SplashPageState extends State<SplashPage> {
   Future<void> _getPokemons() async {
     final dio = Dio();
     final response =
-        await dio.get('https://pokeapi.co/api/v2/pokemon?limit=1034');
+        await dio.get('https://pokeapi.co/api/v2/pokemon?limit=20');
 
     var model = ResponsePokemon.fromMap(response.data);
 
@@ -34,12 +34,31 @@ class _SplashPageState extends State<SplashPage> {
     });
 
     if (!isLoading) {
+      await Future.delayed(const Duration(milliseconds: 500));
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => PokeHomePage(pokemonList: pokemonList),
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => PokeHomePage(
+            initialPokemonList: pokemonList,
+            loadMorePokemons: _loadMorePokemons,
+          ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(
+              opacity: animation,
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 500),
         ),
       );
     }
+  }
+
+  Future<List<PokemonSummary>> _loadMorePokemons(int offset) async {
+    final dio = Dio();
+    final response = await dio
+        .get('https://pokeapi.co/api/v2/pokemon?offset=$offset&limit=20');
+    var model = ResponsePokemon.fromMap(response.data);
+    return model.result;
   }
 
   @override

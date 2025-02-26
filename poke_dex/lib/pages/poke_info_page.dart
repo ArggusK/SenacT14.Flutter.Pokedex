@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:poke_dex/models/pokemon_summary.dart';
 
 class PokemonInfoPage extends StatefulWidget {
@@ -13,6 +14,8 @@ class PokemonInfoPage extends StatefulWidget {
 
 class _PokemonInfoPageState extends State<PokemonInfoPage> {
   late Future<PokemonSummary> _pokemonDetails;
+  bool _isShiny = false;
+  final Dio _dio = Dio();
 
   @override
   void initState() {
@@ -20,99 +23,144 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     _pokemonDetails = _fetchPokemonDetails(widget.pokemon);
   }
 
+  String _capitalize(String text) {
+    if (text.isEmpty) return text;
+    return text[0].toUpperCase() + text.substring(1).toLowerCase();
+  }
+
   Future<PokemonSummary> _fetchPokemonDetails(PokemonSummary pokemon) async {
     try {
-      final dio = Dio();
-      final response = await dio.get(pokemon.url);
+      final response = await _dio.get(pokemon.url);
+      if (response.statusCode != 200)
+        throw Exception('Falha ao carregar detalhes');
 
-      if (response.statusCode == 200) {
-        final data = response.data;
+      final data = response.data;
+      final speciesResponse = await _dio.get(data['species']['url']);
+      final speciesData = speciesResponse.data;
 
-        // Extrair tipos
-        final types = (data['types'] as List)
-            .map((type) => (type['type']['name'] as String).toUpperCase())
-            .toList();
-
-        // Extrair habilidades
-        final abilities = (data['abilities'] as List)
-            .map((ability) => ability['ability']['name'] as String)
-            .toList();
-
-        // Extrair espécie para obter a geração
-        final speciesResponse = await dio.get(data['species']['url']);
-        final speciesData = speciesResponse.data;
-        final generation = speciesData['generation']['name'] as String;
-
-        // Extrair peso e altura
-        final weight = (data['weight'] as int) / 10.0;
-        final height = (data['height'] as int) / 10.0;
-
-        // Extrair stats
-        final stats = <String, int>{};
-        if (data['stats'] != null) {
-          for (var stat in data['stats']) {
-            final statName = stat['stat']['name'] as String;
-            final statValue = stat['base_stat'] as int;
-            stats[statName] = statValue;
-          }
-        }
-
-        // Extrair movimentos
-        final movesByLevel = <Move>[];
-        final movesByTM = <Move>[];
-        if (data['moves'] != null) {
-          for (var move in data['moves']) {
-            final moveName = move['move']['name'] as String;
-            final moveDetails = move['version_group_details'] as List;
-            for (var detail in moveDetails) {
-              final method = detail['move_learn_method']['name'] as String;
-              if (method == 'level-up') {
-                final levelLearned = detail['level_learned_at'] as int;
-                if (!movesByLevel.any((m) => m.name == moveName)) {
-                  movesByLevel
-                      .add(Move(name: moveName, levelLearned: levelLearned));
-                }
-              } else if (method == 'machine') {
-                if (!movesByTM.any((m) => m.name == moveName)) {
-                  movesByTM.add(Move(name: moveName));
-                }
-              }
-            }
-          }
-        }
-
-        return PokemonSummary(
-          name: pokemon.name,
-          url: pokemon.url,
-          imageUrl:
-              'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${_extractPokemonNumber(pokemon.url)}.png',
-          gifUrl:
-              'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/${_extractPokemonNumber(pokemon.url)}.gif',
-          types: types,
-          generation: generation,
-          abilities: abilities,
-          weight: weight,
-          height: height,
-          stats: stats,
-          movesByLevel: movesByLevel,
-          movesByTM: movesByTM,
-        );
-      } else {
-        throw Exception('Failed to load Pokémon details');
-      }
+      return PokemonSummary(
+        name: pokemon.name,
+        url: pokemon.url,
+        imageUrl: pokemon.imageUrl,
+        shinyImageUrl: pokemon.shinyImageUrl,
+        gifUrl: pokemon.gifUrl,
+        shinyGifUrl: pokemon.shinyGifUrl,
+        types: (data['types'] as List)
+            .map((t) => _capitalize(t['type']['name'] as String))
+            .toList(),
+        generation: _capitalize(speciesData['generation']['name'].toString()),
+        abilities: (data['abilities'] as List)
+            .map((a) => _capitalize(a['ability']['name'] as String))
+            .toList(),
+        weight: (data['weight'] as int) / 10,
+        height: (data['height'] as int) / 10,
+        stats: _processStats(data['stats']),
+        movesByLevel: _processMoves(data['moves'], 'level-up'),
+        movesByTM: _processMoves(data['moves'], 'machine'),
+        evolutions:
+            await _fetchEvolutionChain(speciesData['evolution_chain']['url']),
+      );
     } catch (e) {
-      throw Exception('Error: $e');
+      throw Exception('Erro: ${e.toString()}');
     }
   }
 
-  int _extractPokemonNumber(String url) {
-    final uri = Uri.parse(url);
-    final segments = uri.pathSegments;
-    return int.parse(segments[segments.length - 2]);
+  Map<String, int> _processStats(List<dynamic> stats) {
+    final result = <String, int>{};
+    for (var stat in stats) {
+      final statEntry = stat as Map<String, dynamic>;
+      final statName = _formatStatName(statEntry['stat']['name'] as String);
+      result[statName] = statEntry['base_stat'] as int;
+    }
+    return result;
   }
 
-  String _capitalize(String text) =>
-      text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
+  String _formatStatName(String rawName) {
+    const statNames = {
+      'hp': 'HP',
+      'attack': 'ATK',
+      'defense': 'DEF',
+      'special-attack': 'STK',
+      'special-defense': 'SEF',
+      'speed': 'SPD'
+    };
+    return statNames[rawName] ?? _capitalize(rawName.replaceAll('-', ' '));
+  }
+
+  List<Move> _processMoves(List<dynamic> moves, String method) {
+    return moves
+        .expand((move) => (move['version_group_details'] as List)
+            .where((d) => d['move_learn_method']['name'] == method)
+            .map((d) => Move(
+                  name: _capitalize(move['move']['name'] as String),
+                  levelLearned: method == 'level-up'
+                      ? d['level_learned_at'] as int
+                      : null,
+                )))
+        .toSet()
+        .toList()
+      ..sort((a, b) => (a.levelLearned ?? 0).compareTo(b.levelLearned ?? 0));
+  }
+
+  Future<List<Evolution>> _fetchEvolutionChain(String url) async {
+    try {
+      final response = await _dio.get(url);
+      final List<Evolution> evolutions = [];
+      _parseEvolutionChain(response.data['chain'], evolutions);
+      return evolutions;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  void _parseEvolutionChain(dynamic chain, List<Evolution> evolutions,
+      {String? trigger}) {
+    final evolvesTo = chain['evolves_to'] as List<dynamic>;
+    final current = _createEvolution(
+        chain['species'], chain['evolution_details'],
+        previousTrigger: trigger);
+
+    final nextEvolutions = <Evolution>[];
+    for (final next in evolvesTo) {
+      final nextTrigger =
+          _getTrigger(next['evolution_details'] as List<dynamic>);
+      _parseEvolutionChain(next, nextEvolutions, trigger: nextTrigger);
+    }
+
+    if (evolutions.every((e) => e.name != current.name)) {
+      evolutions.add(current.copyWith(nextEvolutions: nextEvolutions));
+    }
+  }
+
+  Evolution _createEvolution(
+      Map<String, dynamic> species, List<dynamic> details,
+      {String? previousTrigger}) {
+    final id = _extractId(species['url'] as String);
+    return Evolution(
+      name: _capitalize(species['name'] as String),
+      imageUrl:
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/$id.png',
+      shinyImageUrl:
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/$id.png',
+      gifUrl:
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/$id.gif',
+      shinyGifUrl:
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/$id.gif',
+      trigger: previousTrigger ?? _getTrigger(details),
+    );
+  }
+
+  String? _getTrigger(List<dynamic> details) {
+    if (details.isEmpty) return null;
+    final d = details.first;
+    if (d['item'] != null)
+      return 'Usar ${_capitalize((d['item']['name'] as String).replaceAll('-', ' '))}';
+    if (d['min_level'] != null) return 'Nível ${d['min_level']}';
+    if (d['trigger']['name'] == 'trade') return 'Troca';
+    return _capitalize(d['trigger']['name'].toString().replaceAll('-', ' '));
+  }
+
+  int _extractId(String url) => int.parse(url.split('/').reversed.elementAt(1));
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +172,34 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            decoration: BoxDecoration(
+              color: Colors.red[800],
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.red[800]!, width: 1.5),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.star, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Transform.scale(
+                  scale: 1.1,
+                  child: Switch(
+                    value: _isShiny,
+                    onChanged: (value) => setState(() => _isShiny = value),
+                    activeColor: Colors.white,
+                    activeTrackColor: Colors.red[800]!.withOpacity(0.9),
+                    inactiveThumbColor: Colors.grey[400],
+                    inactiveTrackColor: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
       body: FutureBuilder<PokemonSummary>(
         future: _pokemonDetails,
@@ -131,9 +207,9 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return Center(child: Text('Erro: ${snapshot.error}'));
           } else if (!snapshot.hasData) {
-            return const Center(child: Text('No data found'));
+            return const Center(child: Text('Dados não encontrados'));
           }
 
           final pokemon = snapshot.data!;
@@ -148,7 +224,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
                     children: [
                       TabBar(
                         tabs: const [
-                          Tab(text: 'Habilidades'),
+                          Tab(text: 'Estatísticas'),
                           Tab(text: 'Movimentos'),
                           Tab(text: 'Evoluções'),
                         ],
@@ -159,7 +235,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
                       Expanded(
                         child: TabBarView(
                           children: [
-                            _buildAbilitiesTab(pokemon),
+                            _buildStatsTab(pokemon),
                             _buildMovesTab(pokemon),
                             _buildEvolutionsTab(pokemon),
                           ],
@@ -177,6 +253,8 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
   }
 
   Widget _buildPokemonHeader(PokemonSummary pokemon) {
+    final gifUrl = _isShiny ? pokemon.shinyGifUrl : pokemon.gifUrl;
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -206,7 +284,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Image.network(
-                pokemon.gifUrl,
+                gifUrl,
                 width: 150,
                 height: 150,
                 errorBuilder: (context, error, stackTrace) =>
@@ -218,119 +296,150 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              Column(
-                children: [
-                  const Text(
-                    'Peso',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  Text(
-                    '${pokemon.weight} kg',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-              Column(
-                children: [
-                  const Text(
-                    'Altura',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  Text(
-                    '${pokemon.height} m',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
+              _buildDescription('Peso', pokemon.weight, 'kg'),
+              _buildDescription('Altura', pokemon.height, 'm'),
+              _buildAbilityButton(pokemon),
             ],
           ),
           const SizedBox(height: 20),
-          Wrap(
-            spacing: 8.0,
-            children: pokemon.types.map((type) {
-              final backgroundColor = pokemon.getTypeColor(type);
-              final textColor =
-                  pokemon.getTextColorForBackground(backgroundColor);
-              return Chip(
-                backgroundColor: backgroundColor,
-                side: BorderSide.none,
-                label: Text(
-                  type,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
+          _buildTypeChips(pokemon),
         ],
       ),
     );
   }
 
-  Widget _buildAbilitiesTab(PokemonSummary pokemon) {
+  Widget _buildDescription(String title, double value, String unit) {
+    return Column(
+      children: [
+        Text(
+          title,
+          style: TextStyle(color: Colors.grey[400], fontSize: 16),
+        ),
+        Text(
+          '${value.toStringAsFixed(1)} $unit',
+          style: const TextStyle(color: Colors.white, fontSize: 18),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTypeChips(PokemonSummary pokemon) {
+    return Wrap(
+      spacing: 8.0,
+      children: pokemon.types.map((type) {
+        final color = pokemon.getTypeColor(type);
+        return Chip(
+          backgroundColor: color,
+          label: Text(
+            type,
+            style: TextStyle(
+              color: pokemon.getTextColorForBackground(color),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildAbilityButton(PokemonSummary pokemon) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.grey[850],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      child: const Icon(
+        FontAwesomeIcons.meteor,
+        color: Colors.white,
+        size: 22,
+      ),
+      onPressed: () => showModalBottomSheet(
+        context: context,
+        builder: (context) => SizedBox(
+          height: 200,
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'Habilidades',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  children: pokemon.abilities
+                      .map((ability) => ListTile(
+                            title: Text(
+                              ability,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsTab(PokemonSummary pokemon) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
           const Text(
-            'Habilidades',
+            'Estatísticas Base',
             style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8.0,
-            runSpacing: 8.0,
-            children: pokemon.abilities.map((ability) {
-              return Text(
-                _capitalize(ability),
-                style: const TextStyle(
-                  fontSize: 18,
-                  color: Colors.white,
-                ),
-              );
-            }).toList(),
+                fontSize: 24, color: Colors.white, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
-          const Text(
-            'Estatísticas',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+          ...pokemon.stats.entries
+              .map((e) => _buildStatProgress(e.key, e.value)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatProgress(String label, int value) {
+    Color color;
+    if (value < 50) {
+      color = Colors.red;
+    } else if (value < 80) {
+      color = Colors.orange;
+    } else if (value < 100) {
+      color = Colors.yellow;
+    } else {
+      color = Colors.green;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 60,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white),
             ),
-            textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 10),
-          Column(
-            children: [
-              _buildStatRow('HP', pokemon.stats['hp'] ?? 0),
-              _buildStatRow('ATK', pokemon.stats['attack'] ?? 0),
-              _buildStatRow('DEF', pokemon.stats['defense'] ?? 0),
-              _buildStatRow('STK', pokemon.stats['special-attack'] ?? 0),
-              _buildStatRow('SEF', pokemon.stats['special-defense'] ?? 0),
-              _buildStatRow('SPD', pokemon.stats['speed'] ?? 0),
-            ],
+          Expanded(
+            child: LinearProgressIndicator(
+              value: value / 150,
+              backgroundColor: Colors.grey[800],
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            value.toString(),
+            style: const TextStyle(color: Colors.white),
           ),
         ],
       ),
@@ -341,106 +450,162 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Movimentos Aprendidos por Nível',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 10),
-          ...pokemon.movesByLevel.map((move) {
-            return ListTile(
-              title: Text(
-                '${move.name} (Nível ${move.levelLearned})',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white,
-                ),
-              ),
-            );
-          }).toList(),
-          const SizedBox(height: 20),
-          const Text(
-            'Movimentos Aprendidos por TM/HM',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 10),
-          ...pokemon.movesByTM.map((move) {
-            return ListTile(
-              title: Text(
-                move.name,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white,
-                ),
-              ),
-            );
-          }).toList(),
+          _buildMoveSection('Aprendidos por Nível', pokemon.movesByLevel),
+          _buildMoveSection('Aprendidos por TM/HM', pokemon.movesByTM),
         ],
       ),
     );
   }
 
-  Widget _buildEvolutionsTab(PokemonSummary pokemon) {
-    return Center(
-      child: Text(
-        'Evoluções de ${pokemon.name}',
-        style: const TextStyle(
-          fontSize: 24,
-          color: Colors.white,
+  Widget _buildMoveSection(String title, List<Move> moves) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0),
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 20,
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ),
+        ...moves.map((move) => ListTile(
+              title: Text(
+                move.levelLearned != null
+                    ? '${move.name} (Nv. ${move.levelLearned})'
+                    : move.name,
+                style: const TextStyle(color: Colors.white),
+                textAlign: TextAlign.center,
+              ),
+            )),
+      ],
+    );
+  }
+
+  Widget _buildEvolutionsTab(PokemonSummary pokemon) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          const Text(
+            'Cadeia Evolutiva',
+            style: TextStyle(
+                fontSize: 24, color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 20),
+          if (pokemon.evolutions.isEmpty)
+            const Text(
+              'Este Pokémon não evolui.',
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          if (pokemon.evolutions.isNotEmpty)
+            _buildEvolutionTree(pokemon.evolutions),
+        ],
       ),
     );
   }
 
-  Widget _buildStatRow(String label, int value) {
-    Color progressColor;
+  Widget _buildEvolutionTree(List<Evolution> evolutions) {
+    return Column(
+      children: evolutions
+          .map((evolution) => _buildEvolutionChain(evolution))
+          .toList(),
+    );
+  }
 
-    if (value < 50) {
-      progressColor = Colors.red;
-    } else if (value < 100) {
-      progressColor = Colors.yellow;
-    } else {
-      progressColor = Colors.green;
-    }
-
+  Widget _buildEvolutionChain(Evolution evolution) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: 16.0),
+      child: Column(
+        children: [
+          _buildEvolutionCard(evolution),
+          if (evolution.nextEvolutions.isNotEmpty) ...[
+            const Icon(Icons.arrow_downward, color: Colors.white54, size: 32),
+            Wrap(
+              spacing: 20,
+              runSpacing: 20,
+              alignment: WrapAlignment.center,
+              children: evolution.nextEvolutions
+                  .map((nextEvo) => _buildEvolutionChain(nextEvo))
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEvolutionCard(Evolution evolution) {
+    final gifUrl = _isShiny ? evolution.shinyGifUrl : evolution.gifUrl;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[850]!.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 50,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white,
+            width: 120,
+            height: 120,
+            child: Image.network(
+              gifUrl,
+              fit: BoxFit.contain, // Exibe a imagem completa sem cortes
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Center(
+                  child: CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                            loadingProgress.expectedTotalBytes!
+                        : null,
+                    color: Colors.red[800],
+                  ),
+                );
+              },
+              errorBuilder: (_, __, ___) => Icon(
+                Icons.error_outline,
+                color: Colors.grey[800],
+                size: 40,
               ),
             ),
           ),
-          Expanded(
-            child: LinearProgressIndicator(
-              value: value / 150,
-              backgroundColor: Colors.grey[800],
-              valueColor: AlwaysStoppedAnimation<Color>(progressColor),
-            ),
-          ),
-          const SizedBox(width: 10),
+          const SizedBox(height: 12),
           Text(
-            '$value',
+            evolution.name,
             style: const TextStyle(
               fontSize: 16,
               color: Colors.white,
+              fontWeight: FontWeight.w600,
             ),
           ),
+          if (evolution.trigger != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                evolution.trigger!,
+                style: TextStyle(
+                  color: Colors.grey[300], // Cor mais neutra
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
         ],
       ),
     );

@@ -3,78 +3,123 @@ import 'package:poke_dex/models/pokemon_summary.dart';
 import 'package:poke_dex/pages/poke_info_page.dart';
 
 class PokeHomePage extends StatefulWidget {
-  final List<PokemonSummary> pokemonList;
+  final List<PokemonSummary> initialPokemonList;
+  final Future<List<PokemonSummary>> Function(int offset) loadMorePokemons;
 
-  const PokeHomePage({super.key, required this.pokemonList});
+  const PokeHomePage({
+    super.key,
+    required this.initialPokemonList,
+    required this.loadMorePokemons,
+  });
 
   @override
   State<PokeHomePage> createState() => _PokeHomePageState();
 }
 
 class _PokeHomePageState extends State<PokeHomePage> {
-  List<PokemonSummary> filteredPokemonList = [];
+  List<PokemonSummary> allPokemonList = [];
+  List<PokemonSummary> pokemonList = [];
+  final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
-  String _currentFilter = 'Crescente';
+  bool isLoadingMore = false;
+  int offset = 20;
+  bool _isSearching = false;
 
   @override
   void initState() {
     super.initState();
-    filteredPokemonList = widget.pokemonList;
-    _applyFilter(_currentFilter);
+    allPokemonList = widget.initialPokemonList;
+    pokemonList = allPokemonList;
+    _scrollController.addListener(_onScroll);
+    _searchController.addListener(() => _filterPokemons());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels ==
+            _scrollController.position.maxScrollExtent &&
+        !isLoadingMore) {
+      _loadMorePokemons();
+    }
+  }
+
+  Future<void> _loadMorePokemons() async {
+    setState(() => isLoadingMore = true);
+    final newPokemons = await widget.loadMorePokemons(offset);
+    setState(() {
+      allPokemonList.addAll(newPokemons);
+      if (!_isSearching) pokemonList = allPokemonList;
+      offset += 20;
+      isLoadingMore = false;
+    });
+  }
+
+  Future<void> _filterPokemons() async {
+    final query = _searchController.text.toLowerCase();
+
+    if (query.isEmpty) {
+      setState(() {
+        _isSearching = false;
+        pokemonList = allPokemonList;
+      });
+      return;
+    }
+
+    setState(() => _isSearching = true);
+
+    while (true) {
+      final found = allPokemonList.any((p) =>
+          p.name.toLowerCase().contains(query) ||
+          (allPokemonList.indexOf(p) + 1).toString().contains(query));
+
+      if (found || isLoadingMore || offset > 1500) break;
+      await _loadMorePokemons();
+    }
+
+    setState(() {
+      pokemonList = allPokemonList.where((p) {
+        final index = allPokemonList.indexOf(p);
+        return p.name.toLowerCase().contains(query) ||
+            (index + 1).toString().contains(query);
+      }).toList();
+    });
   }
 
   void _applyFilter(String filter) {
     setState(() {
-      _currentFilter = filter;
       switch (filter) {
         case 'A a Z':
-          filteredPokemonList = List.from(widget.pokemonList)
-            ..sort((a, b) => a.name.compareTo(b.name));
+          pokemonList.sort((a, b) => a.name.compareTo(b.name));
           break;
         case 'Z a A':
-          filteredPokemonList = List.from(widget.pokemonList)
-            ..sort((a, b) => b.name.compareTo(a.name));
+          pokemonList.sort((a, b) => b.name.compareTo(a.name));
           break;
         case 'Crescente':
-          filteredPokemonList = List.from(widget.pokemonList)
-            ..sort((a, b) => widget.pokemonList
-                .indexOf(a)
-                .compareTo(widget.pokemonList.indexOf(b)));
+          pokemonList.sort((a, b) =>
+              pokemonList.indexOf(a).compareTo(pokemonList.indexOf(b)));
           break;
         case 'Decrescente':
-          filteredPokemonList = List.from(widget.pokemonList)
-            ..sort((a, b) => widget.pokemonList
-                .indexOf(b)
-                .compareTo(widget.pokemonList.indexOf(a)));
+          pokemonList.sort((a, b) =>
+              pokemonList.indexOf(b).compareTo(pokemonList.indexOf(a)));
           break;
       }
     });
   }
 
+  String _capitalize(String text) =>
+      text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
+
   void _onPokemonCardPressed(BuildContext context, PokemonSummary pokemon) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => PokemonInfoPage(pokemon: pokemon),
-      ),
-    );
-  }
-
-  void _filterPokemons(String query) {
-    setState(() {
-      filteredPokemonList = widget.pokemonList.where((pokemon) {
-        final originalIndex = widget.pokemonList.indexOf(pokemon);
-        final pokemonNumber = (originalIndex + 1).toString();
-        final pokemonName = pokemon.name.toLowerCase();
-
-        return pokemonName.contains(query.toLowerCase()) ||
-            pokemonNumber.contains(query);
-      }).toList();
-    });
-  }
-
-  String _capitalize(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1);
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (context) => PokemonInfoPage(pokemon: pokemon)));
   }
 
   @override
@@ -83,145 +128,112 @@ class _PokeHomePageState extends State<PokeHomePage> {
       backgroundColor: Colors.grey[900],
       appBar: AppBar(
         backgroundColor: Colors.red[800],
-        title: const Text(
-          'Pokédex',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: const Text('Pokédex',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         centerTitle: true,
-        elevation: 0,
         actions: [
           PopupMenuButton<String>(
             onSelected: _applyFilter,
-            itemBuilder: (BuildContext context) {
-              return [
-                PopupMenuItem(
-                  value: 'A a Z',
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12.0, horizontal: 16.0),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[800],
-                      borderRadius: BorderRadius.circular(10.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 5,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'A a Z',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'Z a A',
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12.0, horizontal: 16.0),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[800],
-                      borderRadius: BorderRadius.circular(10.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 5,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Z a A',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'Crescente',
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12.0, horizontal: 16.0),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[800],
-                      borderRadius: BorderRadius.circular(10.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 5,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Crescente',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'Decrescente',
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12.0, horizontal: 16.0),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[800],
-                      borderRadius: BorderRadius.circular(10.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 5,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Decrescente',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ),
-              ];
-            },
             icon: const Icon(Icons.filter_list, color: Colors.white),
             color: Colors.grey[900],
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10.0),
-            ),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'A a Z',
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 5,
+                          offset: const Offset(0, 3))
+                    ],
+                  ),
+                  child: const Center(
+                      child:
+                          Text('A a Z', style: TextStyle(color: Colors.white))),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'Z a A',
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 5,
+                          offset: const Offset(0, 3))
+                    ],
+                  ),
+                  child: const Center(
+                      child:
+                          Text('Z a A', style: TextStyle(color: Colors.white))),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'Crescente',
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 5,
+                          offset: const Offset(0, 3))
+                    ],
+                  ),
+                  child: const Center(
+                      child: Text('Crescente',
+                          style: TextStyle(color: Colors.white))),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'Decrescente',
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 5,
+                          offset: const Offset(0, 3))
+                    ],
+                  ),
+                  child: const Center(
+                      child: Text('Decrescente',
+                          style: TextStyle(color: Colors.white))),
+                ),
+              ),
+            ],
           ),
         ],
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(10.0),
+                borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 5,
-                    offset: const Offset(0, 3),
-                  ),
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 5,
+                      offset: const Offset(0, 3))
                 ],
               ),
               child: TextField(
@@ -231,65 +243,43 @@ class _PokeHomePageState extends State<PokeHomePage> {
                   hintStyle: TextStyle(color: Colors.grey[600]),
                   prefixIcon: const Icon(Icons.search, color: Colors.red),
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: 16.0,
-                    horizontal: 16.0,
-                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                 ),
                 style: const TextStyle(color: Colors.black),
-                onChanged: _filterPokemons,
               ),
             ),
           ),
           Expanded(
             child: ListView.builder(
-              itemCount: filteredPokemonList.length,
+              controller: _scrollController,
+              itemCount: pokemonList.length + (isLoadingMore ? 1 : 0),
               itemBuilder: (context, index) {
-                final pokemon = filteredPokemonList[index];
-                final originalIndex = widget.pokemonList.indexOf(pokemon);
-                final pokemonNumber = originalIndex + 1;
-
+                if (index == pokemonList.length) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final pokemon = pokemonList[index];
                 return Card(
-                  margin: const EdgeInsets.symmetric(
-                      vertical: 8.0, horizontal: 16.0),
-                  elevation: 4.0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10.0),
-                  ),
+                  margin:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                   color: Colors.grey[800],
                   child: InkWell(
                     onTap: () => _onPokemonCardPressed(context, pokemon),
-                    borderRadius: BorderRadius.circular(10.0),
                     child: Padding(
-                      padding: const EdgeInsets.all(16.0),
+                      padding: const EdgeInsets.all(16),
                       child: Row(
                         children: [
-                          Image.network(
-                            pokemon.imageUrl,
-                            width: 50,
-                            height: 50,
-                            errorBuilder: (BuildContext context,
-                                Object exception, StackTrace? stackTrace) {
-                              return const Icon(Icons.error,
-                                  color: Colors.white);
-                            },
-                          ),
+                          Image.network(pokemon.imageUrl,
+                              width: 50,
+                              height: 50,
+                              errorBuilder: (context, _, __) =>
+                                  const Icon(Icons.error, color: Colors.white)),
                           const SizedBox(width: 16),
-                          Text(
-                            '#$pokemonNumber',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.white,
-                            ),
-                          ),
+                          Text('#${allPokemonList.indexOf(pokemon) + 1}',
+                              style: const TextStyle(color: Colors.white)),
                           const SizedBox(width: 16),
-                          Text(
-                            _capitalize(pokemon.name),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.white,
-                            ),
-                          ),
+                          Text(_capitalize(pokemon.name),
+                              style: const TextStyle(color: Colors.white)),
                         ],
                       ),
                     ),
