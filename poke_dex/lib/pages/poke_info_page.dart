@@ -25,14 +25,16 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   String _capitalize(String text) {
     if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1).toLowerCase();
+    return text
+        .split('-')
+        .map((word) => word[0].toUpperCase() + word.substring(1).toLowerCase())
+        .join(' ');
   }
 
   Future<PokemonSummary> _fetchPokemonDetails(PokemonSummary pokemon) async {
     try {
       final response = await _dio.get(pokemon.url);
-      if (response.statusCode != 200)
-        throw Exception('Falha ao carregar detalhes');
+      if (response.statusCode != 200) throw Exception('Failed to load details');
 
       final data = response.data;
       final speciesResponse = await _dio.get(data['species']['url']);
@@ -61,7 +63,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             await _fetchEvolutionChain(speciesData['evolution_chain']['url']),
       );
     } catch (e) {
-      throw Exception('Erro: ${e.toString()}');
+      throw Exception('Error: ${e.toString()}');
     }
   }
 
@@ -81,24 +83,32 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       'attack': 'ATK',
       'defense': 'DEF',
       'special-attack': 'STK',
-      'special-defense': 'SEF',
+      'special-defense': 'SDF',
       'speed': 'SPD'
     };
     return statNames[rawName] ?? _capitalize(rawName.replaceAll('-', ' '));
   }
 
   List<Move> _processMoves(List<dynamic> moves, String method) {
-    return moves
-        .expand((move) => (move['version_group_details'] as List)
-            .where((d) => d['move_learn_method']['name'] == method)
-            .map((d) => Move(
-                  name: _capitalize(move['move']['name'] as String),
-                  levelLearned: method == 'level-up'
-                      ? d['level_learned_at'] as int
-                      : null,
-                )))
-        .toSet()
-        .toList()
+    final uniqueMoves = <String, Move>{};
+
+    for (final move in moves) {
+      final moveName = _capitalize(move['move']['name'] as String);
+      final details = (move['version_group_details'] as List)
+          .where((d) => d['move_learn_method']['name'] == method);
+
+      for (final detail in details) {
+        if (!uniqueMoves.containsKey(moveName)) {
+          uniqueMoves[moveName] = Move(
+            name: moveName,
+            levelLearned:
+                method == 'level-up' ? detail['level_learned_at'] as int : null,
+          );
+        }
+      }
+    }
+
+    return uniqueMoves.values.toList()
       ..sort((a, b) => (a.levelLearned ?? 0).compareTo(b.levelLearned ?? 0));
   }
 
@@ -163,6 +173,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
   int _extractId(String url) => int.parse(url.split('/').reversed.elementAt(1));
 
   @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[900],
@@ -178,22 +189,53 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             decoration: BoxDecoration(
               color: Colors.red[800],
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.red[800]!, width: 1.5),
+              border: Border.all(
+                color: Colors.red[800]!,
+                width: 1.5,
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.star, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
                 Transform.scale(
                   scale: 1.1,
                   child: Switch(
                     value: _isShiny,
-                    onChanged: (value) => setState(() => _isShiny = value),
-                    activeColor: Colors.white,
-                    activeTrackColor: Colors.red[800]!.withOpacity(0.9),
+                    onChanged: (value) {
+                      setState(() {
+                        _isShiny = value;
+                      });
+                    },
+                    thumbIcon: WidgetStateProperty.resolveWith(
+                      (state) {
+                        if (state.contains(WidgetState.selected)) {
+                          return Icon(
+                            Icons.star,
+                            color: Colors.yellow,
+                            size: 20,
+                          );
+                        } else {
+                          return Icon(
+                            Icons.star_border_outlined,
+                            color: Colors.yellow,
+                            size: 20,
+                          );
+                        }
+                      },
+                    ),
+                    trackOutlineColor: WidgetStateProperty.resolveWith(
+                      (state) {
+                        if (state.contains(WidgetState.selected)) {
+                          return Colors.yellow;
+                        } else {
+                          return Colors.transparent;
+                        }
+                      },
+                    ),
+                    activeColor: Colors.grey,
+                    activeTrackColor: Colors.grey[800],
                     inactiveThumbColor: Colors.grey[400],
-                    inactiveTrackColor: Colors.grey[600],
+                    inactiveTrackColor: Colors.grey[800],
                   ),
                 ),
               ],
@@ -207,9 +249,9 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
-            return Center(child: Text('Erro: ${snapshot.error}'));
+            return Center(child: Text('Error: ${snapshot.error}'));
           } else if (!snapshot.hasData) {
-            return const Center(child: Text('Dados não encontrados'));
+            return const Center(child: Text('No data found'));
           }
 
           final pokemon = snapshot.data!;
@@ -224,9 +266,9 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
                     children: [
                       TabBar(
                         tabs: const [
-                          Tab(text: 'Estatísticas'),
-                          Tab(text: 'Movimentos'),
-                          Tab(text: 'Evoluções'),
+                          Tab(text: 'Stats'),
+                          Tab(text: 'Moves'),
+                          Tab(text: 'Evolutions'),
                         ],
                         indicatorColor: Colors.white,
                         labelColor: Colors.white,
@@ -254,7 +296,6 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   Widget _buildPokemonHeader(PokemonSummary pokemon) {
     final gifUrl = _isShiny ? pokemon.shinyGifUrl : pokemon.gifUrl;
-
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -273,32 +314,33 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             decoration: BoxDecoration(
               color: Colors.grey[850],
               borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 5,
-                  offset: const Offset(0, 3),
+            ),
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(
+                    gifUrl,
+                    width: 150,
+                    height: 150,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const Icon(Icons.error, color: Colors.white, size: 50),
+                  ),
+                ),
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: _buildAbilityButton(pokemon),
                 ),
               ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                gifUrl,
-                width: 150,
-                height: 150,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.error, color: Colors.white, size: 50),
-              ),
             ),
           ),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildDescription('Peso', pokemon.weight, 'kg'),
-              _buildDescription('Altura', pokemon.height, 'm'),
-              _buildAbilityButton(pokemon),
+              _buildDescription('Weight', pokemon.weight, 'kg'),
+              _buildDescription('Height', pokemon.height, 'm'),
             ],
           ),
           const SizedBox(height: 20),
@@ -343,18 +385,8 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
   }
 
   Widget _buildAbilityButton(PokemonSummary pokemon) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.grey[850],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      ),
-      child: const Icon(
-        FontAwesomeIcons.meteor,
-        color: Colors.white,
-        size: 22,
-      ),
-      onPressed: () => showModalBottomSheet(
+    return InkWell(
+      onTap: () => showModalBottomSheet(
         context: context,
         builder: (context) => SizedBox(
           height: 200,
@@ -363,7 +395,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
               const Padding(
                 padding: EdgeInsets.all(16.0),
                 child: Text(
-                  'Habilidades',
+                  'Abilities',
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
               ),
@@ -385,6 +417,18 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
           ),
         ),
       ),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Icon(
+          FontAwesomeIcons.meteor,
+          color: Colors.white,
+          size: 22,
+        ),
+      ),
     );
   }
 
@@ -394,52 +438,94 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       child: Column(
         children: [
           const Text(
-            'Estatísticas Base',
+            'Base Stats',
             style: TextStyle(
                 fontSize: 24, color: Colors.white, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
-          ...pokemon.stats.entries
-              .map((e) => _buildStatProgress(e.key, e.value)),
+          ...pokemon.stats.entries.map((e) => _buildStatRow(e.key, e.value)),
         ],
       ),
     );
   }
 
-  Widget _buildStatProgress(String label, int value) {
-    Color color;
-    if (value < 50) {
-      color = Colors.red;
-    } else if (value < 80) {
-      color = Colors.orange;
-    } else if (value < 100) {
-      color = Colors.yellow;
-    } else {
-      color = Colors.green;
-    }
+  Widget _buildStatRow(String label, int value) {
+    const double iconSize = 26;
+    const double labelFontSize = 9;
+
+    final Map<String, Color> typeColors = {
+      'HP': Colors.red[400]!,
+      'ATK': Colors.orange[400]!,
+      'DEF': Colors.blue[400]!,
+      'STK': Colors.red[800]!,
+      'SDF': Colors.purple[400]!,
+      'SPD': Colors.yellow[600]!,
+    };
+
+    final Map<String, IconData> typeIcons = {
+      'HP': FontAwesomeIcons.heartPulse,
+      'ATK': FontAwesomeIcons.handFist,
+      'DEF': FontAwesomeIcons.shieldHalved,
+      'STK': FontAwesomeIcons.fireFlameCurved,
+      'SDF': FontAwesomeIcons.shieldVirus,
+      'SPD': FontAwesomeIcons.bolt,
+    };
+
+    final Color dynamicColor = value < 50
+        ? Colors.red[400]!
+        : value < 100
+            ? Colors.orange[400]!
+            : Colors.green[400]!;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          SizedBox(
-            width: 60,
-            child: Text(
-              label,
-              style: const TextStyle(color: Colors.white),
-            ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(typeIcons[label]!, size: iconSize, color: typeColors[label]),
+              const SizedBox(height: 2),
+              Text(
+                '($label)',
+                style: TextStyle(
+                  fontSize: labelFontSize,
+                  color: typeColors[label]!.withOpacity(0.8),
+                ),
+              ),
+            ],
           ),
+          const SizedBox(width: 12),
           Expanded(
-            child: LinearProgressIndicator(
-              value: value / 150,
-              backgroundColor: Colors.grey[800],
-              valueColor: AlwaysStoppedAnimation<Color>(color),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: value / 150,
+                backgroundColor: Colors.grey[800],
+                valueColor: AlwaysStoppedAnimation(dynamicColor),
+                minHeight: 10,
+              ),
             ),
           ),
-          const SizedBox(width: 10),
-          Text(
-            value.toString(),
-            style: const TextStyle(color: Colors.white),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 38,
+            child: Text(
+              '$value',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: dynamicColor,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                  Shadow(
+                    blurRadius: 1.5,
+                    color: Colors.black.withOpacity(0.2),
+                    offset: const Offset(1, 1),
+                  )
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -451,8 +537,8 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          _buildMoveSection('Aprendidos por Nível', pokemon.movesByLevel),
-          _buildMoveSection('Aprendidos por TM/HM', pokemon.movesByTM),
+          _buildMoveSection('Level Up Moves', pokemon.movesByLevel),
+          _buildMoveSection('TM/HM Moves', pokemon.movesByTM),
         ],
       ),
     );
@@ -467,17 +553,14 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
           child: Text(
             title,
             style: const TextStyle(
-              fontSize: 20,
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
+                fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
         ),
         ...moves.map((move) => ListTile(
               title: Text(
                 move.levelLearned != null
-                    ? '${move.name} (Nv. ${move.levelLearned})'
+                    ? '${move.name} (Lv. ${move.levelLearned})'
                     : move.name,
                 style: const TextStyle(color: Colors.white),
                 textAlign: TextAlign.center,
@@ -493,14 +576,14 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       child: Column(
         children: [
           const Text(
-            'Cadeia Evolutiva',
+            'Evolution',
             style: TextStyle(
                 fontSize: 24, color: Colors.white, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
           if (pokemon.evolutions.isEmpty)
             const Text(
-              'Este Pokémon não evolui.',
+              'This Pokémon does not evolve.',
               style: TextStyle(color: Colors.white, fontSize: 16),
             ),
           if (pokemon.evolutions.isNotEmpty)
@@ -542,20 +625,12 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   Widget _buildEvolutionCard(Evolution evolution) {
     final gifUrl = _isShiny ? evolution.shinyGifUrl : evolution.gifUrl;
-
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.grey[850]!.withOpacity(0.9),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -565,7 +640,9 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             height: 120,
             child: Image.network(
               gifUrl,
-              fit: BoxFit.contain, // Exibe a imagem completa sem cortes
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              filterQuality: FilterQuality.high,
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) return child;
                 return Center(
@@ -578,7 +655,8 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
                   ),
                 );
               },
-              errorBuilder: (_, __, ___) => Icon(
+              errorBuilder: (context, error, stackTrace) => Icon(
+                // Corrigido aqui
                 Icons.error_outline,
                 color: Colors.grey[800],
                 size: 40,
@@ -600,7 +678,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
               child: Text(
                 evolution.trigger!,
                 style: TextStyle(
-                  color: Colors.grey[300], // Cor mais neutra
+                  color: Colors.grey[300],
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
                 ),

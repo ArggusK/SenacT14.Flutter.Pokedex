@@ -23,42 +23,58 @@ class _SplashPageState extends State<SplashPage> {
 
   Future<void> _getPokemons() async {
     final dio = Dio();
-    final response =
-        await dio.get('https://pokeapi.co/api/v2/pokemon?limit=20');
+    try {
+      // First get total Pokémon count
+      final countResponse = await dio.get('https://pokeapi.co/api/v2/pokemon');
+      final totalCount = countResponse.data['count'];
 
-    var model = ResponsePokemon.fromMap(response.data);
-
-    setState(() {
-      pokemonList = model.result;
-      isLoading = false;
-    });
-
-    if (!isLoading) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => PokeHomePage(
-            initialPokemonList: pokemonList,
-            loadMorePokemons: _loadMorePokemons,
-          ),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
-          },
-          transitionDuration: const Duration(milliseconds: 500),
-        ),
+      // Fetch all Pokémon
+      final response = await dio.get(
+        'https://pokeapi.co/api/v2/pokemon?limit=$totalCount',
       );
+
+      var model = ResponsePokemon.fromMap(response.data);
+
+      setState(() {
+        pokemonList = model.result;
+        isLoading = false;
+      });
+
+      if (!isLoading) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                PokeHomePage(
+              initialPokemonList: pokemonList,
+              searchPokemons: _searchPokemons,
+            ),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+              return FadeTransition(
+                opacity: animation,
+                child: child,
+              );
+            },
+            transitionDuration: const Duration(milliseconds: 500),
+          ),
+        );
+      }
+    } catch (e) {
+      // Handle error appropriately
+      print('Error fetching Pokémon: $e');
+      setState(() => isLoading = false);
     }
   }
 
-  Future<List<PokemonSummary>> _loadMorePokemons(int offset) async {
-    final dio = Dio();
-    final response = await dio
-        .get('https://pokeapi.co/api/v2/pokemon?offset=$offset&limit=20');
-    var model = ResponsePokemon.fromMap(response.data);
-    return model.result;
+  Future<List<PokemonSummary>> _searchPokemons(String query) async {
+    final lowerQuery = query.toLowerCase();
+    return pokemonList.where((pokemon) {
+      final originalIndex = pokemonList.indexOf(pokemon);
+      final pokemonNumber = (originalIndex + 1).toString();
+      return pokemon.name.toLowerCase().contains(lowerQuery) ||
+          pokemonNumber.contains(query);
+    }).toList();
   }
 
   @override
