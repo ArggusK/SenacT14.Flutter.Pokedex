@@ -24,10 +24,11 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
   }
 
   String _capitalize(String text) {
-    if (text.isEmpty) return text;
     return text
         .split('-')
-        .map((word) => word[0].toUpperCase() + word.substring(1).toLowerCase())
+        .map((word) => word.isNotEmpty
+            ? word[0].toUpperCase() + word.substring(1).toLowerCase()
+            : '')
         .join(' ');
   }
 
@@ -40,76 +41,17 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       final speciesResponse = await _dio.get(data['species']['url']);
       final speciesData = speciesResponse.data;
 
-      return PokemonSummary(
-        name: pokemon.name,
-        url: pokemon.url,
-        imageUrl: pokemon.imageUrl,
-        shinyImageUrl: pokemon.shinyImageUrl,
-        gifUrl: pokemon.gifUrl,
-        shinyGifUrl: pokemon.shinyGifUrl,
-        types: (data['types'] as List)
-            .map((t) => _capitalize(t['type']['name'] as String))
-            .toList(),
-        generation: _capitalize(speciesData['generation']['name'].toString()),
-        abilities: (data['abilities'] as List)
-            .map((a) => _capitalize(a['ability']['name'] as String))
-            .toList(),
-        weight: (data['weight'] as int) / 10,
-        height: (data['height'] as int) / 10,
-        stats: _processStats(data['stats']),
-        movesByLevel: _processMoves(data['moves'], 'level-up'),
-        movesByTM: _processMoves(data['moves'], 'machine'),
-        evolutions:
-            await _fetchEvolutionChain(speciesData['evolution_chain']['url']),
-      );
+      final evolutions =
+          await _fetchEvolutionChain(speciesData['evolution_chain']['url']);
+
+      return PokemonSummary.fromMap({
+        ...data,
+        'species': speciesData,
+        'evolutions': evolutions,
+      });
     } catch (e) {
       throw Exception('Error: ${e.toString()}');
     }
-  }
-
-  Map<String, int> _processStats(List<dynamic> stats) {
-    final result = <String, int>{};
-    for (var stat in stats) {
-      final statEntry = stat as Map<String, dynamic>;
-      final statName = _formatStatName(statEntry['stat']['name'] as String);
-      result[statName] = statEntry['base_stat'] as int;
-    }
-    return result;
-  }
-
-  String _formatStatName(String rawName) {
-    const statNames = {
-      'hp': 'HP',
-      'attack': 'ATK',
-      'defense': 'DEF',
-      'special-attack': 'STK',
-      'special-defense': 'SDF',
-      'speed': 'SPD'
-    };
-    return statNames[rawName] ?? _capitalize(rawName.replaceAll('-', ' '));
-  }
-
-  List<Move> _processMoves(List<dynamic> moves, String method) {
-    final uniqueMoves = <String, Move>{};
-
-    for (final move in moves) {
-      final moveName = _capitalize(move['move']['name'] as String);
-      final details = (move['version_group_details'] as List)
-          .where((d) => d['move_learn_method']['name'] == method);
-
-      for (final detail in details) {
-        if (!uniqueMoves.containsKey(moveName)) {
-          uniqueMoves[moveName] = Move(
-            name: moveName,
-            levelLearned:
-                method == 'level-up' ? detail['level_learned_at'] as int : null,
-          );
-        }
-      }
-    }
-
-    return uniqueMoves.values.toList()
-      ..sort((a, b) => (a.levelLearned ?? 0).compareTo(b.levelLearned ?? 0));
   }
 
   Future<List<Evolution>> _fetchEvolutionChain(String url) async {
@@ -124,21 +66,31 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
   }
 
   void _parseEvolutionChain(dynamic chain, List<Evolution> evolutions,
-      {String? trigger}) {
-    final evolvesTo = chain['evolves_to'] as List<dynamic>;
+      {String? trigger, Evolution? previousEvolution}) {
     final current = _createEvolution(
-        chain['species'], chain['evolution_details'],
-        previousTrigger: trigger);
+      chain['species'],
+      chain['evolution_details'],
+      previousTrigger: trigger,
+    );
 
-    final nextEvolutions = <Evolution>[];
-    for (final next in evolvesTo) {
-      final nextTrigger =
-          _getTrigger(next['evolution_details'] as List<dynamic>);
-      _parseEvolutionChain(next, nextEvolutions, trigger: nextTrigger);
+    if (previousEvolution != null) {
+      previousEvolution.nextEvolutions.add(current);
     }
 
-    if (evolutions.every((e) => e.name != current.name)) {
-      evolutions.add(current.copyWith(nextEvolutions: nextEvolutions));
+    for (final next in chain['evolves_to'] as List<dynamic>) {
+      final nextTrigger =
+          _getTrigger(next['evolution_details'] as List<dynamic>);
+      _parseEvolutionChain(
+        next,
+        evolutions,
+        trigger: nextTrigger,
+        previousEvolution: current,
+      );
+    }
+
+    if (previousEvolution == null &&
+        !evolutions.any((e) => e.name == current.name)) {
+      evolutions.add(current);
     }
   }
 
@@ -172,7 +124,47 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   int _extractId(String url) => int.parse(url.split('/').reversed.elementAt(1));
 
-  @override
+  void _showExpandedImage(BuildContext context, PokemonSummary pokemon) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(40),
+          child: GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Hero(
+              tag: 'pokemonImage-${pokemon.name}',
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.6,
+                height: MediaQuery.of(context).size.width * 0.6,
+                decoration: BoxDecoration(
+                  color: Colors.grey[850],
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Transform.scale(
+                    scale: 0.8,
+                    child: Image.network(
+                      _isShiny ? pokemon.shinyGifUrl : pokemon.gifUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.error,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -296,6 +288,9 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   Widget _buildPokemonHeader(PokemonSummary pokemon) {
     final gifUrl = _isShiny ? pokemon.shinyGifUrl : pokemon.gifUrl;
+    final finalUrl = gifUrl.isEmpty
+        ? (_isShiny ? pokemon.shinyImageUrl : pokemon.imageUrl)
+        : gifUrl;
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -317,14 +312,14 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             ),
             child: Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.network(
-                    gifUrl,
-                    width: 150,
-                    height: 150,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const Icon(Icons.error, color: Colors.white, size: 50),
+                GestureDetector(
+                  onTap: () => _showExpandedImage(context, pokemon),
+                  child: Hero(
+                    tag: 'pokemonImage-${pokemon.name}',
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: _buildImage(gifUrl),
+                    ),
                   ),
                 ),
                 Positioned(
@@ -347,6 +342,16 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
           _buildTypeChips(pokemon),
         ],
       ),
+    );
+  }
+
+  Image _buildImage(String urlImage) {
+    return Image.network(
+      urlImage,
+      width: 150,
+      height: 150,
+      errorBuilder: (context, error, stackTrace) =>
+          const Icon(Icons.error, color: Colors.white, size: 50),
     );
   }
 
@@ -420,7 +425,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: Colors.black54,
+          color: Color.fromARGB(255, 48, 44, 44),
           borderRadius: BorderRadius.circular(20),
         ),
         child: const Icon(
@@ -454,12 +459,12 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     const double labelFontSize = 9;
 
     final Map<String, Color> typeColors = {
-      'HP': Colors.red[400]!,
-      'ATK': Colors.orange[400]!,
-      'DEF': Colors.blue[400]!,
-      'STK': Colors.red[800]!,
-      'SDF': Colors.purple[400]!,
-      'SPD': Colors.yellow[600]!,
+      'HP': Color.fromARGB(255, 224, 224, 224),
+      'ATK': Color.fromARGB(255, 224, 224, 224),
+      'DEF': Color.fromARGB(255, 224, 224, 224),
+      'STK': Color.fromARGB(255, 224, 224, 224),
+      'SDF': Color.fromARGB(255, 224, 224, 224),
+      'SPD': Color.fromARGB(255, 224, 224, 224),
     };
 
     final Map<String, IconData> typeIcons = {
@@ -472,10 +477,10 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     };
 
     final Color dynamicColor = value < 50
-        ? Colors.red[400]!
+        ? Colors.red[600]!
         : value < 100
-            ? Colors.orange[400]!
-            : Colors.green[400]!;
+            ? const Color.fromARGB(255, 255, 179, 0)!
+            : Colors.green[600]!;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -656,7 +661,6 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
                 );
               },
               errorBuilder: (context, error, stackTrace) => Icon(
-                // Corrigido aqui
                 Icons.error_outline,
                 color: Colors.grey[800],
                 size: 40,
@@ -685,6 +689,45 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class PokemonImageExpanded extends StatelessWidget {
+  final PokemonSummary pokemon;
+  final bool isShiny;
+
+  const PokemonImageExpanded({
+    super.key,
+    required this.pokemon,
+    required this.isShiny,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final gifUrl = isShiny ? pokemon.shinyGifUrl : pokemon.gifUrl;
+
+    return Scaffold(
+      backgroundColor: Colors.black.withOpacity(0.95),
+      body: GestureDetector(
+        onTap: () => Navigator.pop(context),
+        child: Center(
+          child: Hero(
+            tag: 'pokemonImage-${pokemon.name}',
+            child: Image.network(
+              gifUrl,
+              width: MediaQuery.of(context).size.width * 0.9,
+              height: MediaQuery.of(context).size.height * 0.7,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Icons.error,
+                color: Colors.white,
+                size: 100,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

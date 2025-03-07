@@ -115,7 +115,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
                       vertical: 12.0, horizontal: 16.0),
                   decoration: BoxDecoration(
                     color: Colors.grey[800],
-                    borderRadius: BorderRadius.circular(10.0),
+                    //borderRadius: BorderRadius.circular(10.0),
                   ),
                   child: const Center(
                     child: Text('A a Z', style: TextStyle(color: Colors.white)),
@@ -130,7 +130,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
                       vertical: 12.0, horizontal: 16.0),
                   decoration: BoxDecoration(
                     color: Colors.grey[800],
-                    borderRadius: BorderRadius.circular(10.0),
+                    //borderRadius: BorderRadius.circular(10.0),
                   ),
                   child: const Center(
                     child: Text('Z a A', style: TextStyle(color: Colors.white)),
@@ -145,7 +145,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
                       vertical: 12.0, horizontal: 16.0),
                   decoration: BoxDecoration(
                     color: Colors.grey[800],
-                    borderRadius: BorderRadius.circular(10.0),
+                    //borderRadius: BorderRadius.circular(10.0),
                   ),
                   child: const Center(
                     child: Text('Crescente',
@@ -161,7 +161,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
                       vertical: 12.0, horizontal: 16.0),
                   decoration: BoxDecoration(
                     color: Colors.grey[800],
-                    borderRadius: BorderRadius.circular(10.0),
+                    //borderRadius: BorderRadius.circular(10.0),
                   ),
                   child: const Center(
                     child: Text('Decrescente',
@@ -182,7 +182,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(10.0),
+                //borderRadius: BorderRadius.circular(10.0),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.2),
@@ -222,12 +222,12 @@ class _PokeHomePageState extends State<PokeHomePage> {
                       vertical: 8.0, horizontal: 16.0),
                   elevation: 4.0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10.0),
-                  ),
+                      //borderRadius: BorderRadius.circular(10.0),
+                      ),
                   color: Colors.grey[800],
                   child: InkWell(
                     onTap: () => _onPokemonCardPressed(context, pokemon),
-                    borderRadius: BorderRadius.circular(10.0),
+                    //borderRadius: BorderRadius.circular(10.0),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Row(

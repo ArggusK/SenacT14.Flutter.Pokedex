@@ -24,11 +24,9 @@ class _SplashPageState extends State<SplashPage> {
   Future<void> _getPokemons() async {
     final dio = Dio();
     try {
-      // First get total Pokémon count
       final countResponse = await dio.get('https://pokeapi.co/api/v2/pokemon');
       final totalCount = countResponse.data['count'];
 
-      // Fetch all Pokémon
       final response = await dio.get(
         'https://pokeapi.co/api/v2/pokemon?limit=$totalCount',
       );

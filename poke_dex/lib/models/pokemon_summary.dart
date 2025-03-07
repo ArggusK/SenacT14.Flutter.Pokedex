@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:poke_dex/string_extension.dart';
 
 class PokemonSummary {
   final String name;
@@ -35,30 +36,81 @@ class PokemonSummary {
     required this.evolutions,
   });
 
-  factory PokemonSummary.fromMap(Map<String, dynamic> map) {
-    final pokemonNumber = map['url'].split('/').reversed.elementAt(1);
-
+  factory PokemonSummary.fromMap(Map<String, dynamic> data) {
     return PokemonSummary(
-      name: map['name'] as String,
-      url: map['url'] as String,
+      name: data['name'] as String,
+      url: data['url'] as String,
       imageUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/$pokemonNumber.png',
+          data['sprites']['other']['official-artwork']['front_default'] ?? '',
       shinyImageUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/$pokemonNumber.png',
-      gifUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/$pokemonNumber.gif',
-      shinyGifUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/$pokemonNumber.gif',
-      types: [],
-      generation: '',
-      abilities: [],
-      weight: 0.0,
-      height: 0.0,
-      stats: {},
-      movesByLevel: [],
-      movesByTM: [],
-      evolutions: [],
+          data['sprites']['other']['official-artwork']['front_shiny'] ?? '',
+      gifUrl: data['sprites']['versions']['generation-v']['black-white']
+              ['animated']['front_default'] ??
+          '',
+      shinyGifUrl: data['sprites']['versions']['generation-v']['black-white']
+              ['animated']['front_shiny'] ??
+          '',
+      types: (data['types'] as List)
+          .map((t) => (t['type']['name'] as String).capitalize())
+          .toList(),
+      generation:
+          (data['species']['generation']['name'].toString().capitalize()),
+      abilities: (data['abilities'] as List)
+          .map((a) => (a['ability']['name'] as String).capitalize())
+          .toList(),
+      weight: (data['weight'] as int) / 10,
+      height: (data['height'] as int) / 10,
+      stats: _processStats(data['stats']),
+      movesByLevel: _processMoves(data['moves'], 'level-up'),
+      movesByTM: _processMoves(data['moves'], 'machine'),
+      evolutions: data['evolutions'] ?? [],
     );
+  }
+
+  static Map<String, int> _processStats(List<dynamic> stats) {
+    final result = <String, int>{};
+    for (var stat in stats) {
+      final statEntry = stat as Map<String, dynamic>;
+      final statName = _formatStatName(statEntry['stat']['name'] as String);
+      result[statName] = statEntry['base_stat'] as int;
+    }
+    return result;
+  }
+
+  static String _formatStatName(String rawName) {
+    const statNames = {
+      'hp': 'HP',
+      'attack': 'ATK',
+      'defense': 'DEF',
+      'special-attack': 'STK',
+      'special-defense': 'SDF',
+      'speed': 'SPD'
+    };
+    return statNames[rawName] ?? rawName.replaceAll('-', ' ').capitalize();
+  }
+
+  static List<Move> _processMoves(List<dynamic> moves, String method) {
+    final uniqueMoves = <String, Move>{};
+    for (final move in moves) {
+      final moveName = (move['move']['name'] as String).capitalize();
+      final details = (move['version_group_details'] as List)
+          .where((d) => d['move_learn_method']['name'] == method);
+
+      for (final detail in details) {
+        final level =
+            method == 'level-up' ? detail['level_learned_at'] as int : null;
+        if (!uniqueMoves.containsKey(moveName) ||
+            (level != null &&
+                (uniqueMoves[moveName]?.levelLearned ?? 0) > level)) {
+          uniqueMoves[moveName] = Move(
+            name: moveName,
+            levelLearned: level,
+          );
+        }
+      }
+    }
+    return uniqueMoves.values.toList()
+      ..sort((a, b) => (a.levelLearned ?? 0).compareTo(b.levelLearned ?? 0));
   }
 
   Color getTypeColor(String type) {
