@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:poke_dex/models/response_pokemon.dart';
 import 'package:poke_dex/models/pokemon_summary.dart';
 import 'package:poke_dex/pages/poke_home_page.dart';
 
@@ -12,69 +11,98 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage> {
-  List<PokemonSummary> pokemonList = [];
-  bool isLoading = true;
+  final Dio _dio = Dio();
+  List<PokemonSummary> _pokemonList = [];
+  bool _isLoading = true;
+  int _totalCount = 0;
+  int _loadedCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _getPokemons();
+    _getTotalCount();
   }
 
-  Future<void> _getPokemons() async {
-    final dio = Dio();
+  Future<void> _getTotalCount() async {
     try {
-      // First get total Pokémon count
-      final countResponse = await dio.get('https://pokeapi.co/api/v2/pokemon');
-      final totalCount = countResponse.data['count'];
-
-      // Fetch all Pokémon
-      final response = await dio.get(
-        'https://pokeapi.co/api/v2/pokemon?limit=$totalCount',
-      );
-
-      var model = ResponsePokemon.fromMap(response.data);
-
-      setState(() {
-        pokemonList = model.result;
-        isLoading = false;
-      });
-
-      if (!isLoading) {
-        await Future.delayed(const Duration(milliseconds: 500));
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                PokeHomePage(
-              initialPokemonList: pokemonList,
-              searchPokemons: _searchPokemons,
-            ),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
-            transitionDuration: const Duration(milliseconds: 500),
-          ),
-        );
-      }
+      final response = await _dio.get('https://pokeapi.co/api/v2/pokemon');
+      _totalCount = response.data['count'];
+      await _loadPokemonsInBatches();
     } catch (e) {
-      // Handle error appropriately
-      print('Error fetching Pokémon: $e');
-      setState(() => isLoading = false);
+      _handleError(e);
+    }
+  }
+
+  Future<void> _loadPokemonsInBatches() async {
+    const initialBatchSize = 50;
+    final totalBatches = (_totalCount / initialBatchSize).ceil();
+
+    for (int i = 0; i < totalBatches; i++) {
+      try {
+        final response = await _dio.get(
+          'https://pokeapi.co/api/v2/pokemon',
+          queryParameters: {
+            'limit': initialBatchSize,
+            'offset': i * initialBatchSize,
+          },
+        );
+
+        final newPokemons = (response.data['results'] as List)
+            .map((p) => PokemonSummary.fromMap(p))
+            .where((p) => !_pokemonList
+                .any((existing) => existing.url == p.url)) // Evita duplicatas
+            .toList();
+
+        setState(() {
+          _pokemonList.addAll(newPokemons);
+          _loadedCount = _pokemonList.length;
+        });
+      } catch (e) {
+        _handleError(e);
+        break;
+      }
+    }
+
+    _navigateToHome();
+  }
+
+  void _navigateToHome() {
+    if (_isLoading) {
+      setState(() => _isLoading = false);
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => PokeHomePage(
+            initialPokemonList: _pokemonList,
+            searchPokemons: _searchPokemons,
+          ),
+          transitionsBuilder: (_, animation, __, child) => FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+          transitionDuration: const Duration(milliseconds: 500),
+        ),
+      );
     }
   }
 
   Future<List<PokemonSummary>> _searchPokemons(String query) async {
     final lowerQuery = query.toLowerCase();
-    return pokemonList.where((pokemon) {
-      final originalIndex = pokemonList.indexOf(pokemon);
-      final pokemonNumber = (originalIndex + 1).toString();
-      return pokemon.name.toLowerCase().contains(lowerQuery) ||
-          pokemonNumber.contains(query);
+    return _pokemonList.where((p) {
+      final index = _pokemonList.indexOf(p) + 1;
+      return p.name.toLowerCase().contains(lowerQuery) ||
+          index.toString().contains(query);
     }).toList();
+  }
+
+  void _handleError(dynamic error) {
+    print('Erro: $error');
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Erro ao carregar Pokémon!'),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
@@ -94,16 +122,31 @@ class _SplashPageState extends State<SplashPage> {
               ),
             ),
             const SizedBox(height: 20),
-            const Icon(
-              Icons.catching_pokemon,
-              size: 100,
-              color: Colors.white,
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                const Icon(Icons.catching_pokemon,
+                    size: 100, color: Colors.white),
+                if (_isLoading) ...[
+                  Positioned(
+                    bottom: 0,
+                    child: Text(
+                      '$_loadedCount/$_totalCount',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  )
+                ],
+              ],
             ),
-            if (isLoading) const SizedBox(height: 20),
-            if (isLoading)
-              const CircularProgressIndicator(
-                color: Colors.white,
-              ),
+            const SizedBox(height: 20),
+            if (_isLoading) ...[
+              const CircularProgressIndicator(color: Colors.white),
+              const SizedBox(height: 10),
+              const Text(
+                'Carregando Pokémon...',
+                style: TextStyle(color: Colors.white),
+              )
+            ],
           ],
         ),
       ),

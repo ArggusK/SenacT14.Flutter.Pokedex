@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:poke_dex/models/pokemon_summary.dart';
 import 'package:poke_dex/pages/poke_info_page.dart';
@@ -81,11 +82,6 @@ class _PokeHomePageState extends State<PokeHomePage> {
     setState(() {
       pokemonList = results;
     });
-  }
-
-  String _capitalize(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1);
   }
 
   @override
@@ -249,7 +245,7 @@ class _PokeHomePageState extends State<PokeHomePage> {
                           ),
                           const SizedBox(width: 16),
                           Text(
-                            _capitalize(pokemon.name),
+                            pokemon.formattedName,
                             style: const TextStyle(
                               fontSize: 16,
                               color: Colors.white,
