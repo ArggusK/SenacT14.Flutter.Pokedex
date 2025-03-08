@@ -63,33 +63,35 @@ class PokemonSummary {
   // Factory method que processa TODOS os dados
   factory PokemonSummary.fromMap(Map<String, dynamic> map) {
     final data = map;
-    final speciesData = map['species'];
-    final evolutionData = map['evolution_chain'];
+    final speciesData = map['species'] ?? {};
+    final evolutionData = map['evolution_chain'] ?? {};
 
-    final pokemonNumber = _extractId(data['url']);
+    final pokemonNumber = _extractId(data['url'] ?? '');
 
     return PokemonSummary(
-      name: (data['name'] as String).capitalize(),
-      url: data['url'] as String,
+      name: (data['name'] as String? ?? '').capitalize(),
+      url: data['url'] as String? ?? '',
       imageUrl: _buildImageUrl(pokemonNumber),
       shinyImageUrl: _buildShinyImageUrl(pokemonNumber),
       gifUrl: _buildGifUrl(pokemonNumber),
       shinyGifUrl: _buildShinyGifUrl(pokemonNumber),
-      types: _parseTypes(data['types']),
-      generation: _parseGeneration(speciesData['url']),
-      abilities: _parseAbilities(data['abilities']),
-      weight: (data['weight'] as int) / 10,
-      height: (data['height'] as int) / 10,
-      stats: _parseStats(data['stats']),
-      movesByLevel: _parseMoves(data['moves'], 'level-up'),
-      movesByTM: _parseMoves(data['moves'], 'machine'),
-      evolutions: _parseEvolutions(evolutionData['chain']),
+      types: _parseTypes(data['types'] ?? []),
+      generation: _parseGeneration(speciesData['url'] ?? ''),
+      abilities: _parseAbilities(data['abilities'] ?? []),
+      weight: (data['weight'] as int? ?? 0) / 10,
+      height: (data['height'] as int? ?? 0) / 10,
+      stats: _parseStats(data['stats'] ?? []),
+      movesByLevel: _parseMoves(data['moves'] ?? [], 'level-up'),
+      movesByTM: _parseMoves(data['moves'] ?? [], 'machine'),
+      evolutions: _parseEvolutions(evolutionData['chain'] ?? {}),
     );
   }
 
   // Métodos auxiliares de parsing
-  static int _extractId(String url) =>
-      int.parse(url.split('/').where((s) => s.isNotEmpty).last);
+  static int _extractId(String url) {
+    final parts = url.split('/').where((s) => s.isNotEmpty).toList();
+    return int.tryParse(parts.last) ?? 0;
+  }
 
   static String _buildImageUrl(int id) =>
       'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/$id.png';
@@ -103,8 +105,9 @@ class PokemonSummary {
   static String _buildShinyGifUrl(int id) =>
       'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/$id.gif';
 
-  static List<String> _parseTypes(List<dynamic> types) =>
-      types.map((t) => (t['type']['name'] as String).capitalize()).toList();
+  static List<String> _parseTypes(List<dynamic> types) => types
+      .map((t) => (t['type']['name'] as String? ?? '').capitalize())
+      .toList();
 
   static String _parseGeneration(String speciesUrl) {
     final parts = speciesUrl.split('/');
@@ -112,13 +115,14 @@ class PokemonSummary {
   }
 
   static List<String> _parseAbilities(List<dynamic> abilities) => abilities
-      .map((a) => (a['ability']['name'] as String).capitalize())
+      .map((a) => (a['ability']['name'] as String? ?? '').capitalize())
       .toList();
 
   static Map<String, int> _parseStats(List<dynamic> stats) {
     return {
       for (var stat in stats)
-        _formatStatName(stat['stat']['name']): stat['base_stat'] as int
+        _formatStatName(stat['stat']['name'] as String? ?? ''):
+            stat['base_stat'] as int? ?? 0
     };
   }
 
@@ -140,9 +144,11 @@ class PokemonSummary {
               (d) => d['move_learn_method']['name'] == method,
             ))
         .map((m) => Move(
-              name: (m['move']['name'] as String).capitalize(),
+              name: (m['move']['name'] as String? ?? '').capitalize(),
               levelLearned: method == 'level-up'
-                  ? (m['version_group_details'][0]['level_learned_at'] as int)
+                  ? (m['version_group_details'][0]['level_learned_at']
+                          as int? ??
+                      0)
                   : null,
             ))
         .toList();
@@ -156,15 +162,15 @@ class PokemonSummary {
 
   static void _parseEvolutionChain(dynamic chain, List<Evolution> evolutions,
       {String? trigger}) {
-    final evolvesTo = chain['evolves_to'] as List<dynamic>;
+    final evolvesTo = chain['evolves_to'] as List<dynamic>? ?? [];
     final current = _createEvolution(
-        chain['species'], chain['evolution_details'],
+        chain['species'], chain['evolution_details'] ?? [],
         previousTrigger: trigger);
 
     final nextEvolutions = <Evolution>[];
     for (final next in evolvesTo) {
       final nextTrigger =
-          _getTrigger(next['evolution_details'] as List<dynamic>);
+          _getTrigger(next['evolution_details'] as List<dynamic>? ?? []);
       _parseEvolutionChain(next, nextEvolutions, trigger: nextTrigger);
     }
 
@@ -176,9 +182,9 @@ class PokemonSummary {
   static Evolution _createEvolution(
       Map<String, dynamic> species, List<dynamic> details,
       {String? previousTrigger}) {
-    final id = _extractId(species['url'] as String);
+    final id = _extractId(species['url'] as String? ?? '');
     return Evolution(
-      name: (species['name'] as String).capitalize(),
+      name: (species['name'] as String? ?? '').capitalize(),
       imageUrl: _buildImageUrl(id),
       shinyImageUrl: _buildShinyImageUrl(id),
       gifUrl: _buildGifUrl(id),
@@ -191,11 +197,11 @@ class PokemonSummary {
     if (details.isEmpty) return null;
     final d = details.first;
     if (d['item'] != null) {
-      return 'Usar ${(d['item']['name'] as String).capitalize}';
+      return 'Usar ${(d['item']['name'] as String? ?? '').capitalize()}';
     }
     if (d['min_level'] != null) return 'Nível ${d['min_level']}';
     if (d['trigger']['name'] == 'trade') return 'Troca';
-    return (d['trigger']['name'] as String).capitalize();
+    return (d['trigger']['name'] as String? ?? '').capitalize();
   }
 
   // Métodos de formatação
