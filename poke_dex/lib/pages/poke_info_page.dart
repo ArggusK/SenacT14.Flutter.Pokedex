@@ -454,12 +454,12 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     const double labelFontSize = 9;
 
     final Map<String, Color> typeColors = {
-      'HP': Colors.red[400]!,
-      'ATK': Colors.orange[400]!,
-      'DEF': Colors.blue[400]!,
-      'STK': Colors.red[800]!,
-      'SDF': Colors.purple[400]!,
-      'SPD': Colors.yellow[600]!,
+      'HP': Color.fromARGB(255, 224, 224, 224),
+      'ATK': Color.fromARGB(255, 224, 224, 224),
+      'DEF': Color.fromARGB(255, 224, 224, 224),
+      'STK': Color.fromARGB(255, 224, 224, 224),
+      'SDF': Color.fromARGB(255, 224, 224, 224),
+      'SPD': Color.fromARGB(255, 224, 224, 224),
     };
 
     final Map<String, IconData> typeIcons = {
