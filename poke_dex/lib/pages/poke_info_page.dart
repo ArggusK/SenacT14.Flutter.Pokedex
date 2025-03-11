@@ -148,6 +148,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       Map<String, dynamic> species, List<dynamic> details,
       {String? previousTrigger}) {
     final id = _extractId(species['url'] as String);
+    final pokemonUrl = 'https://pokeapi.co/api/v2/pokemon/$id/';
     return Evolution(
       name: _capitalize(species['name'] as String),
       imageUrl:
@@ -159,6 +160,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       shinyGifUrl:
           'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/$id.gif',
       trigger: previousTrigger ?? _getTrigger(details),
+      url: pokemonUrl,
     );
   }
 
@@ -352,6 +354,25 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     );
   }
 
+  void _loadEvolution(String url) async {
+    try {
+      final response = await _dio.get(url);
+      final evolutionData = response.data;
+
+      final newPokemon = PokemonSummary.fromMap({
+        'name': evolutionData['name'],
+        'url': url,
+      });
+
+      setState(() {
+        _pokemonDetails = _fetchPokemonDetails(newPokemon);
+        _isShiny = false;
+      });
+    } catch (e) {
+      print('Erro ao carregar evolução: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -475,6 +496,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   Widget _buildPokemonHeader(PokemonSummary pokemon) {
     final gifUrl = _isShiny ? pokemon.shinyGifUrl : pokemon.gifUrl;
+    final imagUrl = _isShiny ? pokemon.shinyImageUrl : pokemon.imageUrl;
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -496,16 +518,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             ),
             child: Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.network(
-                    gifUrl,
-                    width: 150,
-                    height: 150,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const Icon(Icons.error, color: Colors.white, size: 50),
-                  ),
-                ),
+                _buildImage(gifUrl, imagUrl),
                 Positioned(
                   bottom: 8,
                   right: 8,
@@ -527,6 +540,54 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
         ],
       ),
     );
+  }
+
+  FutureBuilder _buildImage(String gifUrl, String imagUrl) {
+    return FutureBuilder(
+      future: _testGifUrl(gifUrl),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.done) {
+          if (snapshot.hasData == false) {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                imagUrl,
+                width: 150,
+                height: 150,
+                errorBuilder: (context, error, stackTrace) =>
+                    const Icon(Icons.error, color: Colors.white, size: 50),
+              ),
+            );
+          } else {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                gifUrl,
+                width: 150,
+                height: 150,
+                errorBuilder: (context, error, stackTrace) =>
+                    const Icon(Icons.error, color: Colors.white, size: 50),
+              ),
+            );
+          }
+        }
+        return CircularProgressIndicator();
+      },
+    );
+  }
+
+  Future<Response<dynamic>?> _testGifUrl(String gifUrl) async {
+    try {
+      var value = await Dio().get(gifUrl);
+      return Response(
+          requestOptions: RequestOptions(
+        data: value,
+      ));
+    } on DioException {
+      return null;
+    } catch (ex) {
+      return null;
+    }
   }
 
   Widget _buildDescription(String title, double value, String unit) {
@@ -567,50 +628,29 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     return InkWell(
       onTap: () => showModalBottomSheet(
         context: context,
-        backgroundColor: Colors.grey[900],
         builder: (context) => SizedBox(
           height: 200,
           child: Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Abilities',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Color.fromARGB(255, 240, 240, 240),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Divider(
-                      color: Colors.grey[700]!.withOpacity(0.7),
-                      height: 1,
-                      thickness: 1.0,
-                      indent: 30,
-                      endIndent: 30,
-                    ),
-                  ],
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'Abilities',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
               ),
               Expanded(
-                child: ListView.builder(
+                child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: pokemon.abilities.length,
-                  itemBuilder: (context, index) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Text(
-                      pokemon.abilities[index],
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Color.fromARGB(255, 240, 240, 240),
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ),
+                  children: pokemon.abilities
+                      .map((ability) => ListTile(
+                            title: Text(
+                              ability,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                          ))
+                      .toList(),
                 ),
               ),
             ],
@@ -620,6 +660,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
+          color: Color.fromARGB(255, 48, 44, 44),
           borderRadius: BorderRadius.circular(20),
         ),
         child: const Icon(
@@ -673,7 +714,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     final Color dynamicColor = value < 50
         ? Colors.red[600]!
         : value < 100
-            ? const Color.fromARGB(255, 255, 179, 0)!
+            ? const Color.fromARGB(255, 255, 179, 0)
             : Colors.green[600]!;
 
     return Padding(
@@ -798,65 +839,68 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   Widget _buildEvolutionCard(Evolution evolution) {
     final gifUrl = _isShiny ? evolution.shinyGifUrl : evolution.gifUrl;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[850]!.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 120,
-            height: 120,
-            child: Image.network(
-              gifUrl,
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.center,
-              filterQuality: FilterQuality.high,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Center(
-                  child: CircularProgressIndicator(
-                    value: loadingProgress.expectedTotalBytes != null
-                        ? loadingProgress.cumulativeBytesLoaded /
-                            loadingProgress.expectedTotalBytes!
-                        : null,
-                    color: Colors.red[800],
-                  ),
-                );
-              },
-              errorBuilder: (context, error, stackTrace) => Icon(
-                Icons.error_outline,
-                color: Colors.grey[800],
-                size: 40,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            evolution.name,
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (evolution.trigger != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                evolution.trigger!,
-                style: TextStyle(
-                  color: Colors.grey[300],
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
+    return InkWell(
+      onTap: () => _loadEvolution(evolution.url),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey[850]!.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 120,
+              height: 120,
+              child: Image.network(
+                gifUrl,
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.center,
+                filterQuality: FilterQuality.high,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Center(
+                    child: CircularProgressIndicator(
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                          : null,
+                      color: Colors.red[800],
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) => Icon(
+                  Icons.error_outline,
+                  color: Colors.grey[800],
+                  size: 40,
                 ),
               ),
             ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              evolution.name,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (evolution.trigger != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  evolution.trigger!,
+                  style: TextStyle(
+                    color: Colors.grey[300],
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
