@@ -94,6 +94,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
     for (final move in moves) {
       final moveName = _capitalize(move['move']['name'] as String);
+      final moveUrl = move['move']['url'] as String;
       final details = (move['version_group_details'] as List)
           .where((d) => d['move_learn_method']['name'] == method);
 
@@ -103,6 +104,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             name: moveName,
             levelLearned:
                 method == 'level-up' ? detail['level_learned_at'] as int : null,
+            url: moveUrl,
           );
         }
       }
@@ -172,7 +174,184 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   int _extractId(String url) => int.parse(url.split('/').reversed.elementAt(1));
 
-  @override
+  Future<String> _fetchMoveDescription(String url) async {
+    try {
+      final moveId = url.split('/').reversed.elementAt(1);
+      final response =
+          await _dio.get('https://pokeapi.co/api/v2/move/$moveId/');
+      final data = response.data;
+
+      final flavorTexts = (data['flavor_text_entries'] as List)
+          .where((entry) => entry['language']['name'] == 'en')
+          .toList();
+
+      if (flavorTexts.isNotEmpty) {
+        return flavorTexts.last['flavor_text'].toString().replaceAll('\n', ' ');
+      }
+      return 'No description available';
+    } catch (e) {
+      return 'Failed to load description';
+    }
+  }
+
+  void _showMoveDetails(BuildContext context, Move move) async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      isScrollControlled: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.4,
+        child: FutureBuilder<String>(
+          future: _fetchMoveDescription(move.url),
+          builder: (context, snapshot) {
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Move Details',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[200],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Divider(
+                        color: Colors.grey[700]!.withOpacity(0.7),
+                        height: 1,
+                        thickness: 1.0,
+                        indent: 30,
+                        endIndent: 30,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          move.levelLearned != null
+                              ? 'Learned at Level ${move.levelLearned}'
+                              : 'Learned by TM/HM',
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: snapshot.hasData
+                        ? SingleChildScrollView(
+                            child: Text(
+                              snapshot.data!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.grey[300],
+                                fontSize: 16,
+                                height: 1.4,
+                              ),
+                            ),
+                          )
+                        : const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.red,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMoveSection(String title, List<Move> moves) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 20, left: 16, right: 16),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey[200],
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: moves.map((move) => _buildMoveCard(move)).toList(),
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
+  Widget _buildMoveCard(Move move) {
+    return InkWell(
+      onTap: () => _showMoveDetails(context, move),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 150,
+        decoration: BoxDecoration(
+          color: Colors.grey[850],
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            )
+          ],
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              move.name,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey[100],
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                height: 1.2,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                move.levelLearned != null ? 'Lv.${move.levelLearned}' : 'TM/HM',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -388,29 +567,50 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     return InkWell(
       onTap: () => showModalBottomSheet(
         context: context,
+        backgroundColor: Colors.grey[900],
         builder: (context) => SizedBox(
           height: 200,
           child: Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text(
-                  'Abilities',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Text(
+                      'Abilities',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color.fromARGB(255, 240, 240, 240),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Divider(
+                      color: Colors.grey[700]!.withOpacity(0.7),
+                      height: 1,
+                      thickness: 1.0,
+                      indent: 30,
+                      endIndent: 30,
+                    ),
+                  ],
                 ),
               ),
               Expanded(
-                child: ListView(
+                child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  children: pokemon.abilities
-                      .map((ability) => ListTile(
-                            title: Text(
-                              ability,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                          ))
-                      .toList(),
+                  itemCount: pokemon.abilities.length,
+                  itemBuilder: (context, index) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text(
+                      pokemon.abilities[index],
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Color.fromARGB(255, 240, 240, 240),
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -420,7 +620,6 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: Colors.black54,
           borderRadius: BorderRadius.circular(20),
         ),
         child: const Icon(
@@ -472,10 +671,10 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     };
 
     final Color dynamicColor = value < 50
-        ? Colors.red[400]!
+        ? Colors.red[600]!
         : value < 100
-            ? Colors.orange[400]!
-            : Colors.green[400]!;
+            ? const Color.fromARGB(255, 255, 179, 0)!
+            : Colors.green[600]!;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -541,32 +740,6 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
           _buildMoveSection('TM/HM Moves', pokemon.movesByTM),
         ],
       ),
-    );
-  }
-
-  Widget _buildMoveSection(String title, List<Move> moves) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12.0),
-          child: Text(
-            title,
-            style: const TextStyle(
-                fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        ...moves.map((move) => ListTile(
-              title: Text(
-                move.levelLearned != null
-                    ? '${move.name} (Lv. ${move.levelLearned})'
-                    : move.name,
-                style: const TextStyle(color: Colors.white),
-                textAlign: TextAlign.center,
-              ),
-            )),
-      ],
     );
   }
 
@@ -656,7 +829,6 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
                 );
               },
               errorBuilder: (context, error, stackTrace) => Icon(
-                // Corrigido aqui
                 Icons.error_outline,
                 color: Colors.grey[800],
                 size: 40,

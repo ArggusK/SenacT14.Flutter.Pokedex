@@ -113,8 +113,9 @@ class PokemonSummary {
 class Move {
   final String name;
   final int? levelLearned;
+  final String url;
 
-  Move({required this.name, this.levelLearned});
+  Move({required this.name, this.levelLearned, required this.url});
 }
 
 class Evolution {
