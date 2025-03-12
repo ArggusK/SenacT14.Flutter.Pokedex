@@ -1,8 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:poke_dex/models/pokemon_service.dart';
 import 'package:poke_dex/models/pokemon_summary.dart';
+import 'package:poke_dex/services/pokemon_service.dart';
 import 'package:poke_dex/string_extension.dart';
 
 class PokemonInfoPage extends StatefulWidget {
@@ -18,6 +18,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
   late Future<PokemonSummary> _pokemonDetails;
   bool _isShiny = false;
   final PokemonService _pokemonService = PokemonService();
+  final Dio _dio = Dio();
 
   @override
   void initState() {
@@ -27,9 +28,15 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
 
   void _loadEvolution(String url) async {
     try {
-      final pokemonNumber = url.split('/').reversed.elementAt(1);
+      final response = await _dio.get(url);
+      final data = response.data;
+      final speciesUrl = data['species']['url'];
+      final speciesResponse = await _dio.get(speciesUrl);
+      final speciesData = speciesResponse.data;
+      final pokemonName = speciesData['name'].toString().capitalize();
+
       final newPokemon = PokemonSummary.fromMap({
-        'name': 'pokemon$pokemonNumber',
+        'name': pokemonName,
         'url': url,
       });
 

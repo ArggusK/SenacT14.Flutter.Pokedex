@@ -84,15 +84,44 @@ class PokemonService {
 
       final evolvesToList = chainData['evolves_to'] as List<dynamic>? ?? [];
       for (final nextEvolution in evolvesToList) {
+        final nextTrigger =
+            _getTrigger(nextEvolution['evolution_details'] ?? []);
         await _parseEvolutionChain(
           nextEvolution,
           evolution.nextEvolutions,
-          previousTrigger: trigger,
+          previousTrigger: nextTrigger,
         );
       }
     } catch (e) {
       throw Exception('Error parsing evolution chain: ${e.toString()}');
     }
+  }
+
+  String? _getTrigger(List<dynamic> details) {
+    if (details.isEmpty) return null;
+    final d = details.first;
+
+    String trigger = '';
+    if (d['item'] != null) {
+      trigger =
+          'Usar ${(d['item']['name'] as String).replaceAll('-', ' ').capitalize()}';
+    } else if (d['min_level'] != null) {
+      trigger = 'Nível ${d['min_level']}';
+    } else if (d['min_happiness'] != null) {
+      trigger = 'Felicidade ${d['min_happiness']}';
+    } else if (d['time_of_day']?.toString().isNotEmpty == true) {
+      trigger = 'À ${d['time_of_day']}'.capitalize();
+    } else if (d['known_move_type'] != null) {
+      trigger =
+          'Saber ${(d['known_move_type']['name'] as String).capitalize()}';
+    } else if (d['trigger']['name'] == 'trade') {
+      trigger = 'Troca';
+    } else {
+      trigger =
+          (d['trigger']['name'].toString().replaceAll('-', ' ').capitalize());
+    }
+
+    return trigger.isNotEmpty ? trigger : null;
   }
 
   Exception _handleDioError(DioException e) {
@@ -118,7 +147,7 @@ class PokemonService {
 
   List<String> _processTypes(List<dynamic> types) {
     return types
-        .map((t) => (t['type']['name'] as String).capitalize())
+        .map((t) => (t['type']['name'] as String).toUpperCase())
         .toList();
   }
 
@@ -169,15 +198,5 @@ class PokemonService {
     }
     return uniqueMoves.values.toList()
       ..sort((a, b) => (a.levelLearned ?? 0).compareTo(b.levelLearned ?? 0));
-  }
-
-  String? _getTrigger(List<dynamic> details) {
-    if (details.isEmpty) return null;
-    final d = details.first;
-    if (d['item'] != null)
-      return 'Usar ${(d['item']['name'] as String).replaceAll('-', ' ').capitalize()}';
-    if (d['min_level'] != null) return 'Nível ${d['min_level']}';
-    if (d['trigger']['name'] == 'trade') return 'Troca';
-    return (d['trigger']['name'].toString().replaceAll('-', ' ').capitalize());
   }
 }

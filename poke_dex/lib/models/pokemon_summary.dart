@@ -166,7 +166,7 @@ class Evolution {
       shinyImageUrl: shinyImageUrl,
       gifUrl: gifUrl,
       shinyGifUrl: shinyGifUrl,
-      nextEvolutions: nextEvolutions ?? this.nextEvolutions,
+      nextEvolutions: nextEvolutions ?? [],
       trigger: trigger ?? this.trigger,
       url: url,
     );
