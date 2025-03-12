@@ -300,29 +300,50 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
     return InkWell(
       onTap: () => showModalBottomSheet(
         context: context,
+        backgroundColor: Colors.grey[900],
         builder: (context) => SizedBox(
           height: 200,
           child: Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text(
-                  'Abilities',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Text(
+                      'Abilities',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color.fromARGB(255, 240, 240, 240),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Divider(
+                      color: Colors.grey[700]!.withOpacity(0.7),
+                      height: 1,
+                      thickness: 1.0,
+                      indent: 30,
+                      endIndent: 30,
+                    ),
+                  ],
                 ),
               ),
               Expanded(
-                child: ListView(
+                child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  children: pokemon.abilities
-                      .map((ability) => ListTile(
-                            title: Text(
-                              ability,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                          ))
-                      .toList(),
+                  itemCount: pokemon.abilities.length,
+                  itemBuilder: (context, index) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text(
+                      pokemon.abilities[index],
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Color.fromARGB(255, 240, 240, 240),
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -332,7 +353,6 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: Color.fromARGB(255, 48, 44, 44),
           borderRadius: BorderRadius.circular(20),
         ),
         child: const Icon(
