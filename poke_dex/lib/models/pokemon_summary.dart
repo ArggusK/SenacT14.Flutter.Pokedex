@@ -37,18 +37,19 @@ class PokemonSummary {
 
   factory PokemonSummary.fromMap(Map<String, dynamic> map) {
     final pokemonNumber = map['url'].split('/').reversed.elementAt(1);
+    final parsedNumber = int.parse(pokemonNumber);
 
     return PokemonSummary(
       name: map['name'] as String,
       url: map['url'] as String,
       imageUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/$pokemonNumber.png',
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/$parsedNumber.png',
       shinyImageUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/$pokemonNumber.png',
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/$parsedNumber.png',
       gifUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/$pokemonNumber.gif',
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/$parsedNumber.gif',
       shinyGifUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/$pokemonNumber.gif',
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/$parsedNumber.gif',
       types: [],
       generation: '',
       abilities: [],
@@ -138,6 +139,22 @@ class Evolution {
     this.trigger,
     required this.url,
   });
+
+  factory Evolution.fromPokemonNumber(String pokemonNumber, String name) {
+    final parsedNumber = int.parse(pokemonNumber);
+    return Evolution(
+      name: name,
+      imageUrl:
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/$parsedNumber.png',
+      shinyImageUrl:
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/$parsedNumber.png',
+      gifUrl:
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/$parsedNumber.gif',
+      shinyGifUrl:
+          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/$parsedNumber.gif',
+      url: 'https://pokeapi.co/api/v2/pokemon/$parsedNumber/',
+    );
+  }
 
   Evolution copyWith({
     List<Evolution>? nextEvolutions,

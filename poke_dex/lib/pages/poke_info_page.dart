@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:poke_dex/models/pokemon_service.dart';
 import 'package:poke_dex/models/pokemon_summary.dart';
+import 'package:poke_dex/string_extension.dart';
 
 class PokemonInfoPage extends StatefulWidget {
   final PokemonSummary pokemon;
@@ -15,357 +17,24 @@ class PokemonInfoPage extends StatefulWidget {
 class _PokemonInfoPageState extends State<PokemonInfoPage> {
   late Future<PokemonSummary> _pokemonDetails;
   bool _isShiny = false;
-  final Dio _dio = Dio();
+  final PokemonService _pokemonService = PokemonService();
 
   @override
   void initState() {
     super.initState();
-    _pokemonDetails = _fetchPokemonDetails(widget.pokemon);
-  }
-
-  String _capitalize(String text) {
-    if (text.isEmpty) return text;
-    return text
-        .split('-')
-        .map((word) => word[0].toUpperCase() + word.substring(1).toLowerCase())
-        .join(' ');
-  }
-
-  Future<PokemonSummary> _fetchPokemonDetails(PokemonSummary pokemon) async {
-    try {
-      final response = await _dio.get(pokemon.url);
-      if (response.statusCode != 200) throw Exception('Failed to load details');
-
-      final data = response.data;
-      final speciesResponse = await _dio.get(data['species']['url']);
-      final speciesData = speciesResponse.data;
-
-      return PokemonSummary(
-        name: pokemon.name,
-        url: pokemon.url,
-        imageUrl: pokemon.imageUrl,
-        shinyImageUrl: pokemon.shinyImageUrl,
-        gifUrl: pokemon.gifUrl,
-        shinyGifUrl: pokemon.shinyGifUrl,
-        types: (data['types'] as List)
-            .map((t) => _capitalize(t['type']['name'] as String))
-            .toList(),
-        generation: _capitalize(speciesData['generation']['name'].toString()),
-        abilities: (data['abilities'] as List)
-            .map((a) => _capitalize(a['ability']['name'] as String))
-            .toList(),
-        weight: (data['weight'] as int) / 10,
-        height: (data['height'] as int) / 10,
-        stats: _processStats(data['stats']),
-        movesByLevel: _processMoves(data['moves'], 'level-up'),
-        movesByTM: _processMoves(data['moves'], 'machine'),
-        evolutions:
-            await _fetchEvolutionChain(speciesData['evolution_chain']['url']),
-      );
-    } catch (e) {
-      throw Exception('Error: ${e.toString()}');
-    }
-  }
-
-  Map<String, int> _processStats(List<dynamic> stats) {
-    final result = <String, int>{};
-    for (var stat in stats) {
-      final statEntry = stat as Map<String, dynamic>;
-      final statName = _formatStatName(statEntry['stat']['name'] as String);
-      result[statName] = statEntry['base_stat'] as int;
-    }
-    return result;
-  }
-
-  String _formatStatName(String rawName) {
-    const statNames = {
-      'hp': 'HP',
-      'attack': 'ATK',
-      'defense': 'DEF',
-      'special-attack': 'STK',
-      'special-defense': 'SDF',
-      'speed': 'SPD'
-    };
-    return statNames[rawName] ?? _capitalize(rawName.replaceAll('-', ' '));
-  }
-
-  List<Move> _processMoves(List<dynamic> moves, String method) {
-    final uniqueMoves = <String, Move>{};
-
-    for (final move in moves) {
-      final moveName = _capitalize(move['move']['name'] as String);
-      final moveUrl = move['move']['url'] as String;
-      final details = (move['version_group_details'] as List)
-          .where((d) => d['move_learn_method']['name'] == method);
-
-      for (final detail in details) {
-        if (!uniqueMoves.containsKey(moveName)) {
-          uniqueMoves[moveName] = Move(
-            name: moveName,
-            levelLearned:
-                method == 'level-up' ? detail['level_learned_at'] as int : null,
-            url: moveUrl,
-          );
-        }
-      }
-    }
-
-    return uniqueMoves.values.toList()
-      ..sort((a, b) => (a.levelLearned ?? 0).compareTo(b.levelLearned ?? 0));
-  }
-
-  Future<List<Evolution>> _fetchEvolutionChain(String url) async {
-    try {
-      final response = await _dio.get(url);
-      final List<Evolution> evolutions = [];
-      _parseEvolutionChain(response.data['chain'], evolutions);
-      return evolutions;
-    } catch (e) {
-      return [];
-    }
-  }
-
-  void _parseEvolutionChain(dynamic chain, List<Evolution> evolutions,
-      {String? trigger}) {
-    final evolvesTo = chain['evolves_to'] as List<dynamic>;
-    final current = _createEvolution(
-        chain['species'], chain['evolution_details'],
-        previousTrigger: trigger);
-
-    final nextEvolutions = <Evolution>[];
-    for (final next in evolvesTo) {
-      final nextTrigger =
-          _getTrigger(next['evolution_details'] as List<dynamic>);
-      _parseEvolutionChain(next, nextEvolutions, trigger: nextTrigger);
-    }
-
-    if (evolutions.every((e) => e.name != current.name)) {
-      evolutions.add(current.copyWith(nextEvolutions: nextEvolutions));
-    }
-  }
-
-  Evolution _createEvolution(
-      Map<String, dynamic> species, List<dynamic> details,
-      {String? previousTrigger}) {
-    final id = _extractId(species['url'] as String);
-    final pokemonUrl = 'https://pokeapi.co/api/v2/pokemon/$id/';
-    return Evolution(
-      name: _capitalize(species['name'] as String),
-      imageUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/$id.png',
-      shinyImageUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/$id.png',
-      gifUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/$id.gif',
-      shinyGifUrl:
-          'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/$id.gif',
-      trigger: previousTrigger ?? _getTrigger(details),
-      url: pokemonUrl,
-    );
-  }
-
-  String? _getTrigger(List<dynamic> details) {
-    if (details.isEmpty) return null;
-    final d = details.first;
-    if (d['item'] != null)
-      return 'Usar ${_capitalize((d['item']['name'] as String).replaceAll('-', ' '))}';
-    if (d['min_level'] != null) return 'Nível ${d['min_level']}';
-    if (d['trigger']['name'] == 'trade') return 'Troca';
-    return _capitalize(d['trigger']['name'].toString().replaceAll('-', ' '));
-  }
-
-  int _extractId(String url) => int.parse(url.split('/').reversed.elementAt(1));
-
-  Future<String> _fetchMoveDescription(String url) async {
-    try {
-      final moveId = url.split('/').reversed.elementAt(1);
-      final response =
-          await _dio.get('https://pokeapi.co/api/v2/move/$moveId/');
-      final data = response.data;
-
-      final flavorTexts = (data['flavor_text_entries'] as List)
-          .where((entry) => entry['language']['name'] == 'en')
-          .toList();
-
-      if (flavorTexts.isNotEmpty) {
-        return flavorTexts.last['flavor_text'].toString().replaceAll('\n', ' ');
-      }
-      return 'No description available';
-    } catch (e) {
-      return 'Failed to load description';
-    }
-  }
-
-  void _showMoveDetails(BuildContext context, Move move) async {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.grey[900],
-      isScrollControlled: true,
-      builder: (context) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.4,
-        child: FutureBuilder<String>(
-          future: _fetchMoveDescription(move.url),
-          builder: (context, snapshot) {
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Move Details',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[200],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Divider(
-                        color: Colors.grey[700]!.withOpacity(0.7),
-                        height: 1,
-                        thickness: 1.0,
-                        indent: 30,
-                        endIndent: 30,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          move.levelLearned != null
-                              ? 'Learned at Level ${move.levelLearned}'
-                              : 'Learned by TM/HM',
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: snapshot.hasData
-                        ? SingleChildScrollView(
-                            child: Text(
-                              snapshot.data!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.grey[300],
-                                fontSize: 16,
-                                height: 1.4,
-                              ),
-                            ),
-                          )
-                        : const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.red,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMoveSection(String title, List<Move> moves) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 20, left: 16, right: 16),
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey[200],
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.1,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            alignment: WrapAlignment.center,
-            children: moves.map((move) => _buildMoveCard(move)).toList(),
-          ),
-        ),
-        const SizedBox(height: 20),
-      ],
-    );
-  }
-
-  Widget _buildMoveCard(Move move) {
-    return InkWell(
-      onTap: () => _showMoveDetails(context, move),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: 150,
-        decoration: BoxDecoration(
-          color: Colors.grey[850],
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            )
-          ],
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              move.name,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey[100],
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                height: 1.2,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                move.levelLearned != null ? 'Lv.${move.levelLearned}' : 'TM/HM',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 13,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    _pokemonDetails = _pokemonService.fetchPokemonDetails(widget.pokemon);
   }
 
   void _loadEvolution(String url) async {
     try {
-      final response = await _dio.get(url);
-      final evolutionData = response.data;
-
+      final pokemonNumber = url.split('/').reversed.elementAt(1);
       final newPokemon = PokemonSummary.fromMap({
-        'name': evolutionData['name'],
+        'name': 'pokemon$pokemonNumber',
         'url': url,
       });
 
       setState(() {
-        _pokemonDetails = _fetchPokemonDetails(newPokemon);
+        _pokemonDetails = _pokemonService.fetchPokemonDetails(newPokemon);
         _isShiny = false;
       });
     } catch (e) {
@@ -389,10 +58,6 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
             decoration: BoxDecoration(
               color: Colors.red[800],
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.red[800]!,
-                width: 1.5,
-              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -503,7 +168,7 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
-            _capitalize(pokemon.name),
+            pokemon.name.capitalize(),
             style: const TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.bold,
@@ -782,6 +447,184 @@ class _PokemonInfoPageState extends State<PokemonInfoPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildMoveSection(String title, List<Move> moves) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 20, left: 16, right: 16),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey[200],
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: moves.map((move) => _buildMoveCard(move)).toList(),
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
+  Widget _buildMoveCard(Move move) {
+    return InkWell(
+      onTap: () => _showMoveDetails(context, move),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 150,
+        decoration: BoxDecoration(
+          color: Colors.grey[850],
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            )
+          ],
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              move.name,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey[100],
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                height: 1.2,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                move.levelLearned != null ? 'Lv.${move.levelLearned}' : 'TM/HM',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMoveDetails(BuildContext context, Move move) async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      isScrollControlled: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.4,
+        child: FutureBuilder<String>(
+          future: _fetchMoveDescription(move.url),
+          builder: (context, snapshot) {
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Move Details',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[200],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Divider(
+                        color: Colors.grey[700]!.withOpacity(0.7),
+                        height: 1,
+                        thickness: 1.0,
+                        indent: 30,
+                        endIndent: 30,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          move.levelLearned != null
+                              ? 'Learned at Level ${move.levelLearned}'
+                              : 'Learned by TM/HM',
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: snapshot.hasData
+                        ? SingleChildScrollView(
+                            child: Text(
+                              snapshot.data!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.grey[300],
+                                fontSize: 16,
+                                height: 1.4,
+                              ),
+                            ),
+                          )
+                        : const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.red,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<String> _fetchMoveDescription(String url) async {
+    try {
+      final moveId = url.split('/').reversed.elementAt(1);
+      final response =
+          await Dio().get('https://pokeapi.co/api/v2/move/$moveId/');
+      final data = response.data;
+
+      final flavorTexts = (data['flavor_text_entries'] as List)
+          .where((entry) => entry['language']['name'] == 'en')
+          .toList();
+
+      if (flavorTexts.isNotEmpty) {
+        return flavorTexts.last['flavor_text'].toString().replaceAll('\n', ' ');
+      }
+      return 'No description available';
+    } catch (e) {
+      return 'Failed to load description';
+    }
   }
 
   Widget _buildEvolutionsTab(PokemonSummary pokemon) {
